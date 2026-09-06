@@ -112,6 +112,7 @@ test suite covers both paths.
 | `POST /api/order` | buyer | Prices the order from the catalogue, stores it, emails you and the buyer |
 | `GET /api/orders` | you | The order book behind `ADMIN_TOKEN` |
 | `POST /api/order-status` | you | Mark delivered / refunded / cancelled |
+| `GET /api/health` | anyone | Which variables landed. Booleans only, never values. With an admin token it also round-trips the database. |
 
 `/admin.html` is the seller UI over those two admin routes. It is `noindex`
 and unlinked from the site.
@@ -143,13 +144,20 @@ you verify a sending domain. Until then `MAIL_FROM` must be
 `onboarding@resend.dev`, which can only reach your own address — fine for the
 seller alert, not for buyer receipts.
 
+### Did it work?
+
+Open `/admin.html` and enter your `ADMIN_TOKEN`. If anything is missing it
+prints a per-variable checklist and a live database round-trip, so you can see
+which name is wrong instead of guessing from a failing checkout. Or hit
+`/api/health` directly.
+
 ### Checks
 
 ```bash
 node tools/check-api.mjs
 ```
 
-23 tests, no server and no network — Redis and Resend are stubbed. Covers
+27 tests, no server and no network — Redis and Resend are stubbed. Covers
 server-side pricing, that a client-supplied total is ignored, validation,
 admin auth, and that marking an order delivered emails the buyer exactly once.
 

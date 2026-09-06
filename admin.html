@@ -75,7 +75,43 @@
     </div>`;
   }
 
-  function setupHTML(detail) {
+  const tick = (ok) => ok
+    ? `<span style="color:var(--ok)">set</span>`
+    : `<span style="color:var(--err)">missing</span>`;
+
+  /**
+   * Ask /api/health which variables actually landed. Guessing from a
+   * failing order book is the slow way to find a typo in one name.
+   */
+  async function healthHTML() {
+    let h;
+    try {
+      const res = await api("/api/health");
+      if (!res.ok) return "";
+      h = await res.json();
+    } catch { return ""; }
+
+    const rt = h.store.roundTrip;
+    return `
+      <p class="eyebrow u-mt-md">What the server can see</p>
+      <ul class="order-items">
+        <li><code>UPSTASH_REDIS_REST_URL</code> — ${tick(h.store.UPSTASH_REDIS_REST_URL)}</li>
+        <li><code>UPSTASH_REDIS_REST_TOKEN</code> — ${tick(h.store.UPSTASH_REDIS_REST_TOKEN)}</li>
+        <li><code>ADMIN_TOKEN</code> — ${tick(h.admin.configured)}${h.admin.configured && !h.admin.tokenAccepted ? ` <span style="color:var(--err)">(the token you entered does not match)</span>` : ""}</li>
+        <li><code>RESEND_API_KEY</code> — ${tick(h.mail.RESEND_API_KEY)}</li>
+        <li><code>SELLER_EMAIL</code> — ${tick(h.mail.SELLER_EMAIL)}</li>
+        <li><code>MAIL_FROM</code> — ${tick(h.mail.MAIL_FROM)} <span class="sub">(optional)</span></li>
+      </ul>
+      ${rt ? `<p class="panel-note">Live database check: ${rt.ok
+        ? `<span style="color:var(--ok)">reachable in ${rt.ms} ms</span>`
+        : `<span style="color:var(--err)">failed — ${esc(rt.error ?? "no response")}</span>`}</p>` : ""}
+      <p class="panel-note">
+        Orders are recorded as soon as the two Upstash values are set.
+        Email only affects whether you are notified.
+      </p>`;
+  }
+
+  async function setupHTML(detail) {
     return `
     <div class="glass u-pad">
       <p class="eyebrow">Backend not configured</p>
@@ -84,13 +120,9 @@
       <p class="panel-note">
         Checkout still works — it falls back to the buyer emailing you the
         reference. To record orders server-side, set these in Vercel under
-        <strong>Settings → Environment Variables</strong>, then redeploy:
+        <strong>Settings → Environment Variables</strong>, then redeploy.
       </p>
-      <ul class="order-items">
-        <li><code>UPSTASH_REDIS_REST_URL</code> and <code>UPSTASH_REDIS_REST_TOKEN</code> — free Upstash Redis database</li>
-        <li><code>ADMIN_TOKEN</code> — any long random string; it opens this page</li>
-        <li><code>RESEND_API_KEY</code> and <code>SELLER_EMAIL</code> — so a new order emails you</li>
-      </ul>
+      ${await healthHTML()}
     </div>`;
   }
 
@@ -127,7 +159,7 @@
     try {
       res = await api("/api/orders");
     } catch {
-      root.innerHTML = setupHTML("Could not reach /api/orders. If you are running the site from a plain static server, the API only exists on Vercel.");
+      root.innerHTML = await setupHTML("Could not reach /api/orders. If you are running the site from a plain static server, the API only exists on Vercel.");
       return;
     }
 
@@ -137,15 +169,15 @@
       return wireSignIn();
     }
     if (res.status === 404) {
-      root.innerHTML = setupHTML("There is no /api/orders route on this host — the site is being served as plain static files.");
+      root.innerHTML = await setupHTML("There is no /api/orders route on this host — the site is being served as plain static files.");
       return;
     }
     if (res.status === 501) {
-      root.innerHTML = setupHTML((await res.json()).error);
+      root.innerHTML = await setupHTML((await res.json()).error);
       return;
     }
     if (!res.ok) {
-      root.innerHTML = setupHTML(`The server returned ${res.status}.`);
+      root.innerHTML = await setupHTML(`The server returned ${res.status}.`);
       return;
     }
 

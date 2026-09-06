@@ -74,3 +74,15 @@ export async function list() {
   }
   return orders.sort((a, b) => String(b.placedAt).localeCompare(String(a.placedAt)));
 }
+
+/**
+ * Write-then-read a throwaway key to prove the credentials really work.
+ * Deliberately NOT the orders hash: a probe must never appear in the
+ * order book or move the counts. Expires by itself after a minute.
+ */
+export async function probe() {
+  const key = "davinci:health";
+  const token = `${Date.now()}-${Math.random()}`;
+  await redis(["SET", key, token, "EX", 60]);
+  return (await redis(["GET", key])) === token;
+}
