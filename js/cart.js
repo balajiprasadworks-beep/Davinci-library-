@@ -108,8 +108,19 @@ export function orders() {
  * Record a placed order locally so the buyer can see it on their dashboard
  * while manual (QR) payment is confirmed out of band.
  */
+export function saveOrder(order) {
+  write(ORDERS_KEY, [order, ...orders()]);
+  clear();
+  return order;
+}
+
+/**
+ * Fallback used only when the order API is unreachable or not configured.
+ * The total here is computed in the browser and is therefore advisory —
+ * when the API is available the server prices the order instead.
+ */
 export function placeOrder({ email, txnId }) {
-  const order = {
+  return saveOrder({
     ref: "DV" + Date.now().toString(36).toUpperCase().slice(-7),
     placedAt: new Date().toISOString(),
     email,
@@ -117,10 +128,8 @@ export function placeOrder({ email, txnId }) {
     status: "awaiting-confirmation",
     total: subtotal(),
     items: items().map(({ id, title, price }) => ({ id, title, price })),
-  };
-  write(ORDERS_KEY, [order, ...orders()]);
-  clear();
-  return order;
+    recordedOnServer: false,
+  });
 }
 
 /* ---------- profile ---------- */

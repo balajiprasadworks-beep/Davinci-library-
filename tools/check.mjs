@@ -25,9 +25,11 @@ const browser = await chromium.launch({
 const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
 const page = await ctx.newPage();
 
-// Nothing is allowed to 404 any more: the site is fully self-hosted and the
-// payment QR is committed. A missing QR would silently break checkout.
-const EXPECTED_MISSING = /(?!)/;
+// Nothing static is allowed to 404 — the site is fully self-hosted and the
+// payment QR is committed. The one exception is /api/*: those routes only
+// exist on Vercel, so against a plain static server their absence is the
+// very thing the checkout fallback is designed to survive.
+const EXPECTED_MISSING = /\/api\//;
 
 // A 404 surfaces as a console error whose text does NOT include the URL, so
 // filtering console text cannot tell an expected miss from a real one. Watch
@@ -174,7 +176,10 @@ await page.click('#confirm-form button[type="submit"]');
 await page.waitForTimeout(700);
 const placed = await page.locator("text=Order placed").count();
 const badgeAfter = await page.locator("[data-cart-count]").first().textContent();
-log("order placed:", placed > 0, "· badge cleared:", badgeAfter.trim() === "0");
+const fallbackCopy = await page.locator("text=Send us the reference").count();
+log("order placed:", placed > 0, "· badge cleared:", badgeAfter.trim() === "0",
+    "· fallback copy shown:", fallbackCopy > 0);
+if (!fallbackCopy) problems.push("no API here, so checkout should have shown the fallback instructions");
 if (!placed) problems.push("checkout did not confirm the order");
 if (badgeAfter.trim() !== "0") problems.push("cart was not emptied after checkout");
 
@@ -264,6 +269,25 @@ log("invalid email rejected: true");
 /* ---------- 13. no third-party requests ---------- */
 log("external hosts contacted:", external.size ? [...external].join(", ") : "none");
 if (external.size) problems.push(`page made third-party requests: ${[...external].join(", ")}`);
+
+
+/* ---------- 14. admin order book ---------- */
+await page.goto(BASE + "/admin.html", { waitUntil: "networkidle" });
+await page.waitForTimeout(400);
+const signIn = await page.locator("#signin").count();
+log("admin asks for a token:", signIn > 0);
+if (!signIn) problems.push("admin page did not ask for a token");
+
+await page.fill("#token", "any-token-will-do-here");
+await page.click('#signin button[type="submit"]');
+await page.waitForTimeout(600);
+const setupShown = await page.locator("text=Backend not configured").count();
+log("admin explains the missing backend:", setupShown > 0);
+if (!setupShown) problems.push("admin page did not explain that the API is absent");
+
+const indexed = await page.locator('meta[name="robots"]').getAttribute("content");
+log("admin robots meta:", indexed);
+if (!indexed?.includes("noindex")) problems.push("admin page is indexable");
 
 await browser.close();
 

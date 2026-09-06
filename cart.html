@@ -93,7 +93,7 @@
     </form>`;
   }
 
-  function confirmedHTML(order) {
+  function confirmedHTML(order, onServer = false) {
     const lines = order.items.map((i) => `${i.title} — ${money(i.price)}`).join("\n");
     const body = encodeURIComponent(
       `Order ${order.ref}\n\n${lines}\n\nTotal: ${money(order.total)}\nTransaction ID: ${order.txnId}\nDeliver to: ${order.email}`
@@ -110,16 +110,67 @@
       <p class="order-ref">
         ${esc(order.ref)}
       </p>
+      ${onServer ? `
       <p class="order-note">
-        We've recorded your order. Send the reference below so your notes can be
-        released — they'll reach <strong>${esc(order.email)}</strong> within 12 hours.
+        We have your order and your payment reference — nothing else is needed
+        from you. Your notes reach <strong>${esc(order.email)}</strong> within
+        12 hours, once the payment is checked.
+      </p>
+      <div class="order-actions">
+        <a class="btn btn-primary" href="dashboard.html">View my orders</a>
+        <a class="btn btn-ghost" href="index.html">Keep browsing</a>
+      </div>` : `
+      <p class="order-note">
+        Your order is saved on this device. <strong>Send us the reference</strong>
+        so your notes can be released — they'll reach
+        <strong>${esc(order.email)}</strong> within 12 hours.
       </p>
       <div class="order-actions">
         <a class="btn btn-primary" href="mailto:${SITE.contactEmail}?subject=${subject}&body=${body}">Email the reference</a>
         ${wa}
         <a class="btn btn-ghost" href="dashboard.html">View my orders</a>
-      </div>
+      </div>`}
     </div>`;
+  }
+
+  /**
+   * Send the order to the API, which prices it from the catalogue and
+   * records it so the seller actually learns about the sale.
+   *
+   * Falls back to the original browser-only flow whenever the API is
+   * absent, unconfigured or unreachable — on that path the buyer has to
+   * email the reference, which is exactly how the site worked before the
+   * backend existed. A missing environment variable must not cost a sale.
+   */
+  async function submitOrder({ email, txnId }) {
+    const ids = cart.items().map((p) => p.id);
+    try {
+      const res = await fetch("/api/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, email, txnId }),
+      });
+
+      if (res.ok) {
+        const server = await res.json();
+        // Keep a local copy so the dashboard still works offline.
+        return {
+          order: cart.saveOrder({ ...server, txnId, status: "awaiting-payment-check", recordedOnServer: true }),
+          onServer: true,
+        };
+      }
+
+      // The server rejected the input — show its reason on the field.
+      if (res.status === 400) {
+        const { error, field } = await res.json();
+        return { error: { message: error, field } };
+      }
+      // 404/501/502 all mean "no working backend": fall through.
+    } catch {
+      // Offline, or the API route does not exist on this host.
+    }
+
+    return { order: cart.placeOrder({ email, txnId }), onServer: false };
   }
 
   function paint() {
@@ -157,10 +208,11 @@
       </aside>
     </div>`;
 
-    root.querySelector("#confirm-form")?.addEventListener("submit", (e) => {
+    root.querySelector("#confirm-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const email = e.target.email.value.trim();
-      const txnId = e.target.txn.value.trim();
+      const form = e.target;
+      const email = form.email.value.trim();
+      const txnId = form.txn.value.trim();
 
       // Say what is wrong and where, rather than doing nothing.
       const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
@@ -170,9 +222,27 @@
       if (!emailOk) return document.getElementById("email").focus();
       if (!txnOk) return document.getElementById("txn").focus();
 
-      const order = cart.placeOrder({ email, txnId });
-      root.innerHTML = confirmedHTML(order);
-      toast("Order placed — check your email");
+      const button = form.querySelector("button[type=submit]");
+      button.disabled = true;
+      button.textContent = "Recording your order…";
+
+      const { order, onServer, error } = await submitOrder({ email, txnId });
+
+      if (error) {
+        button.disabled = false;
+        button.textContent = "I've paid — place my order";
+        const field = document.getElementById(`field-${error.field === "txnId" ? "txn" : "email"}`);
+        if (field) {
+          field.classList.add("has-error");
+          field.querySelector(".field-error").textContent = error.message;
+        } else {
+          toast(error.message);
+        }
+        return;
+      }
+
+      root.innerHTML = confirmedHTML(order, onServer);
+      toast("Order placed");
     });
   }
 

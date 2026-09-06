@@ -3,7 +3,8 @@
 A 3D interactive storefront for medical notes — MBBS year-wise, internship
 practical guides, and preparation for exams abroad.
 
-Static site. No build step, no framework, no backend. Open it, edit it, push it.
+Static pages with no build step and no framework, plus three optional
+serverless functions that record orders. Open it, edit it, push it.
 
 ---
 
@@ -30,6 +31,7 @@ python3 -m http.server 8080
 | `profile.html` | Buyer details, stored locally |
 | `legal.html` | Terms of sale, refunds, privacy, medical disclaimer |
 | `404.html` | Branded not-found page (Vercel serves it automatically) |
+| `admin.html` | Seller order book — `noindex`, unlinked, behind `ADMIN_TOKEN` |
 
 Every page carries the same two-tier header: **Dashboard** and **Go to Cart** on
 the top row, **View Cart** (with a live count) and **Profile** below it.
@@ -98,10 +100,65 @@ hotspot all pick it up automatically.
 
 ---
 
+## The backend
+
+The site is static, but `/api` holds three Vercel serverless functions that
+record orders. **All of it is optional** — with no environment variables set,
+checkout falls back to the original browser-only flow and nothing breaks. The
+test suite covers both paths.
+
+| Route | Who | What |
+| --- | --- | --- |
+| `POST /api/order` | buyer | Prices the order from the catalogue, stores it, emails you and the buyer |
+| `GET /api/orders` | you | The order book behind `ADMIN_TOKEN` |
+| `POST /api/order-status` | you | Mark delivered / refunded / cancelled |
+
+`/admin.html` is the seller UI over those two admin routes. It is `noindex`
+and unlinked from the site.
+
+### Why it exists
+
+Without it you only learn about a sale if the buyer remembers to email you the
+reference. When they forget, money arrives in your account with no way to tell
+who paid or what to send. The API records the order the moment they check out.
+
+### The prices are server-side
+
+`api/_lib/order.js` imports `js/catalog.js` — the same file the page renders
+from — and sums the total itself. The browser sends product **ids only**. A
+tampered client cannot invent a ₹1 order.
+
+### Turning it on
+
+In Vercel, **Settings → Environment Variables**, then redeploy:
+
+| Variable | Why |
+| --- | --- |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Free Upstash Redis. Without these `/api/order` returns 501 and checkout falls back. |
+| `ADMIN_TOKEN` | Any long random string. Opens `/admin.html`. Unset means the admin API is off, not open. |
+| `RESEND_API_KEY`, `SELLER_EMAIL`, `MAIL_FROM` | So a new order emails you. Optional — a failed email never fails an order. |
+
+One honest caveat on email: Resend only delivers to arbitrary addresses once
+you verify a sending domain. Until then `MAIL_FROM` must be
+`onboarding@resend.dev`, which can only reach your own address — fine for the
+seller alert, not for buyer receipts.
+
+### Checks
+
+```bash
+node tools/check-api.mjs
+```
+
+23 tests, no server and no network — Redis and Resend are stubbed. Covers
+server-side pricing, that a client-supplied total is ignored, validation,
+admin auth, and that marking an order delivered emails the buyer exactly once.
+
+---
+
 ## How the money flows
 
-There is no payment gateway. The flow is deliberately manual, which is what
-works for a solo seller:
+There is still no payment gateway. The flow is deliberately manual, which is
+what works for a solo seller:
 
 1. Buyer adds notes to the cart.
 2. Checkout shows your QR and the exact total.
@@ -109,7 +166,11 @@ works for a solo seller:
 4. Buyer enters their email and the transaction ID.
 5. The site records the order, gives them a reference (`DV…`), and opens a
    prefilled email or WhatsApp message addressed to you.
-6. You verify the payment and send the PDFs.
+6. You verify the payment and send the PDFs, then mark it delivered on
+   `/admin.html`.
+
+With the backend on, step 5 happens automatically and the buyer has nothing to
+send you. Without it, they have to email the reference themselves.
 
 Orders are stored in the buyer's own browser so they can see their history on
 the dashboard. **You** are the system of record — check your bank, then deliver.
