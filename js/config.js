@@ -33,6 +33,15 @@ export const PAYMENT = {
     "Your notes are delivered to your inbox within 12 hours.",
 };
 
+export const ANATOMY = {
+  /* The 3D figure on the homepage.
+     Set to "" to fall back to the built-in procedural figure.
+     Any standing human .glb/.gltf works — it is auto-scaled to the
+     right height and stood on the floor, so the region hotspots
+     keep lining up. */
+  modelUrl: "assets/model/male.glb",
+};
+
 /** Format a number as a price string. */
 export function money(n) {
   return PAYMENT.symbol + n.toLocaleString("en-IN");

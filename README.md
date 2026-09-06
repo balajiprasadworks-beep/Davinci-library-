@@ -110,15 +110,48 @@ blocks that; `cart.placeOrder()` is the single point you would swap.
 
 ## The 3D figure
 
-`js/anatomy.js` builds the body procedurally from Three.js primitives — a lathed
-torso, capsule limbs, glowing organs and a Fresnel shell. Nothing is downloaded,
-so it stays fast on an iPad.
+The homepage figure is a real sculpted human mesh — `assets/model/male.glb`,
+80k triangles, 1.4 MB — lit with a warm key, cool fill and a soft rim.
 
-Six hotspots are pinned to anatomical regions. Tapping one opens a glass card
-and filters the grid below to the notes anchored there.
+Six hotspots are pinned to anatomical regions. Tapping one opens a glass card,
+glows that region through the body, and filters the grid below to the notes
+anchored there.
 
-To swap in a real scanned model later, replace `buildBody()` with a
-`GLTFLoader` call and keep `HOTSPOTS` as it is.
+### Replacing the model
+
+Point `ANATOMY.modelUrl` in `js/config.js` at any standing human `.glb`/`.gltf`:
+
+```js
+export const ANATOMY = { modelUrl: "assets/model/male.glb" };
+```
+
+It is auto-scaled to a fixed height and stood on a fixed floor, so the hotspots
+keep lining up without retuning. Set it to `""` to fall back to the built-in
+procedural figure.
+
+Two deliberate safety nets, both worth keeping:
+
+- If the model 404s or fails to parse, the procedural figure stays on screen —
+  the page can never end up empty.
+- If the mesh carries no vertex normals, they are computed on load. Sculpt
+  exports frequently omit them, and without this the body renders matte black.
+
+### Preparing a new model
+
+A raw sculpt is far too heavy to ship (the source here was 46 MB, 1.4M
+triangles). `tools/obj-to-glb.py` decimates, orients and normalises it:
+
+```bash
+pip install trimesh fast-simplification numpy scipy
+python3 tools/obj-to-glb.py
+```
+
+## Vendored libraries
+
+Three.js and GSAP live in `vendor/` rather than loading from a CDN. This is
+deliberate: a student on hospital wifi with a blocked CDN still gets a working
+site. Nothing on the page depends on a third-party host except Google Fonts,
+which degrades to system fonts if blocked.
 
 ---
 

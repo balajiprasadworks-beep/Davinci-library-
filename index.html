@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DaVinci's Medical Library — Notes for doctors in training</title>
-<meta name="description" content="Exam-ready medical notes for MBBS, internship postings, NEET PG, USMLE, AMC, PLAB, DHA and MCAT. Pin a note to the body, add it to your cart, revise tonight.">
+<meta name="description" content="One stop for deep medical notes — thorough enough to genuinely understand a subject, condensed enough for last-minute preparation. MBBS years, internship postings, NEET PG, USMLE, AMC, PLAB, DHA and MCAT.">
 <meta name="color-scheme" content="dark">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='none' stroke='%23c9a55c' stroke-width='2'/><path d='m20 11-3 7-7 3 3-7z' fill='%23e3c88a'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,13 +15,13 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    "three": "./vendor/three/three.module.js",
+    "three/addons/": "./vendor/three/addons/"
   }
 }
 </script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script defer src="vendor/gsap/gsap.min.js"></script>
+<script defer src="vendor/gsap/ScrollTrigger.min.js"></script>
 </head>
 <body>
 
@@ -33,11 +33,12 @@
   <section class="wrap hero">
     <div class="hero-copy">
       <p class="eyebrow">MBBS · Internship · Abroad Exams</p>
-      <h1>The body, <span class="gold">annotated.</span></h1>
+      <h1>Deep enough to understand.<br><span class="gold">Fast enough to revise.</span></h1>
       <p class="lede">
-        Notes written the way Leonardo drew — dissected to the mechanism, and clear
-        enough to revise the night before. Turn the figure, open a region, and
-        find the notes pinned to it.
+        One stop for both halves of medicine — notes thorough enough to finally
+        understand a subject properly, and condensed enough to carry you through
+        the night before the paper. From first-year anatomy to NEET PG, USMLE,
+        PLAB and AMC.
       </p>
       <div class="hero-actions">
         <a class="btn btn-primary" href="#collections">Browse the library</a>
@@ -64,8 +65,9 @@
       <p class="eyebrow" id="pinned-eyebrow">The whole library</p>
       <h2 id="pinned-title">Every title, in one place</h2>
       <p class="lede" id="pinned-lede">
-        Open a region on the figure to narrow this to the notes anchored there,
-        or browse the full catalogue below.
+        Understanding first, revision second — every title is written to serve
+        both. Open a region on the figure to narrow this to the notes anchored
+        there, or browse the full catalogue below.
       </p>
     </div>
     <div class="subnav" id="region-nav" role="tablist" aria-label="Anatomical region"></div>
@@ -117,7 +119,7 @@
 
 <script type="module">
   import { CATEGORIES, PRODUCTS, REGIONS, byRegion, subLabel } from "./js/catalog.js";
-  import { money } from "./js/config.js";
+  import { money, ANATOMY } from "./js/config.js";
   import * as cart from "./js/cart.js";
   import { mountShell, toast, revealAll, icons } from "./js/shell.js";
 
@@ -179,7 +181,7 @@
     if (region === "all") {
       eyebrow.textContent = "The whole library";
       title.textContent = "Every title, in one place";
-      lede.textContent = "Open a region on the figure to narrow this to the notes anchored there, or browse the full catalogue below.";
+      lede.textContent = "Understanding first, revision second — every title is written to serve both. Open a region on the figure to narrow this to the notes anchored there, or browse the full catalogue below.";
     } else {
       eyebrow.textContent = "Pinned to " + REGIONS[region];
       title.textContent = REGIONS[region];
@@ -257,7 +259,10 @@
   (async () => {
     try {
       const { initAnatomy } = await import("./js/anatomy.js");
-      scene = initAnatomy(document.getElementById("anatomy"), { onSelect: showPin });
+      scene = initAnatomy(document.getElementById("anatomy"), {
+        onSelect: showPin,
+        modelUrl: ANATOMY.modelUrl,
+      });
       document.getElementById("stage-loading").hidden = true;
     } catch (err) {
       console.warn("3D figure unavailable:", err);

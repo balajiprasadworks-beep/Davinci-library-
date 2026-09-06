@@ -1,170 +1,217 @@
 /* ============================================================
-   ANATOMY — the rotatable 3D body at the centre of the homepage.
+   ANATOMY — the rotatable figure at the centre of the homepage.
 
-   Built procedurally from primitives so the page stays fast on
-   an iPad and needs no model download. The body is rendered as a
-   translucent Fresnel shell with glowing organs inside, and six
-   hotspots pinned to anatomical regions.
+   Built procedurally, but to real proportions: 7.5 heads tall,
+   with muscle bellies (biceps, quadriceps, gastrocnemius) shaped
+   by tapered lathe profiles rather than uniform capsules, and lit
+   as a solid sculpted body rather than a wireframe hologram.
 
-   To swap in a real scanned model later, replace buildBody()
-   with a GLTFLoader call and keep HOTSPOTS as-is.
+   Nothing is downloaded, so it stays fast on an iPad.
+
+   USING A REAL ANATOMICAL MODEL INSTEAD
+   -------------------------------------
+   Procedural geometry gets you a well-proportioned figure, but it
+   cannot look like a scanned cadaver — that needs a sculpted mesh.
+   Set ANATOMY.modelUrl in js/config.js to a .glb/.gltf file and it
+   is used instead: the model is auto-scaled to the same height and
+   stood on the same floor, so the region hotspots still line up.
+   The built-in figure stays as the fallback if the file is missing
+   or fails to parse, so the page can never end up empty.
    ============================================================ */
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-/* Anatomical anchor points, in model space. */
+/* Anatomical landmarks.
+   pos  = where the marker sits, just off the skin
+   core = centre of the region, for the highlight glow
+   glow = ellipsoid radii of that highlight */
 export const HOTSPOTS = [
-  { region: "head",     label: "Head & Neuro",     pos: [0, 1.46, 0.16] },
-  { region: "chest",    label: "Thorax",           pos: [0, 0.74, 0.30] },
-  { region: "abdomen",  label: "Abdomen",          pos: [0, 0.30, 0.30] },
-  { region: "pelvis",   label: "Pelvis",           pos: [0, -0.06, 0.28] },
-  { region: "limbs",    label: "Musculoskeletal",  pos: [0.50, 0.42, 0.06] },
-  { region: "systemic", label: "Systemic",         pos: [-0.50, 0.42, 0.06] },
+  {
+    region: "head", label: "Head & Neuro",
+    pos: [0, 1.60, 0.15], core: [0, 1.52, 0], glow: [0.29, 0.31, 0.29],
+  },
+  {
+    region: "chest", label: "Thorax",
+    pos: [0, 0.86, 0.30], core: [0, 0.86, 0], glow: [0.42, 0.28, 0.27],
+  },
+  {
+    region: "abdomen", label: "Abdomen",
+    pos: [0, 0.48, 0.26], core: [0, 0.46, 0], glow: [0.36, 0.26, 0.25],
+  },
+  {
+    region: "pelvis", label: "Pelvis",
+    pos: [0.19, 0.14, 0.20], core: [0, 0.12, 0], glow: [0.38, 0.24, 0.25],
+  },
+  {
+    region: "limbs", label: "Musculoskeletal",
+    pos: [0.30, -0.42, 0.18], core: [0.20, -0.45, 0], glow: [0.28, 0.48, 0.28],
+  },
+  {
+    region: "systemic", label: "Systemic",
+    pos: [-0.47, 0.66, 0.16], core: [0, 0.55, 0], glow: [0.56, 1.12, 0.44],
+  },
 ];
 
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
-/* ---------- materials ---------- */
+/* The figure occupies a fixed box so the hotspots above line up whether
+   the body is the built-in one or a loaded model. */
+const FIGURE_HEIGHT = 3.44;
+const FIGURE_FLOOR = -1.72;
 
-/** Translucent shell that glows at grazing angles — the hologram read. */
-function fresnelMaterial(color, power = 2.4, strength = 1.0) {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      uColor: { value: new THREE.Color(color) },
-      uPower: { value: power },
-      uStrength: { value: strength },
-    },
-    vertexShader: `
-      varying vec3 vNormal;
-      varying vec3 vView;
-      void main() {
-        vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        vNormal = normalize(normalMatrix * normal);
-        vView = normalize(-mv.xyz);
-        gl_Position = projectionMatrix * mv;
-      }`,
-    fragmentShader: `
-      uniform vec3 uColor;
-      uniform float uPower;
-      uniform float uStrength;
-      varying vec3 vNormal;
-      varying vec3 vView;
-      void main() {
-        float f = pow(1.0 - abs(dot(normalize(vNormal), normalize(vView))), uPower);
-        gl_FragColor = vec4(uColor, clamp(f * uStrength, 0.0, 1.0));
-      }`,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
+/** Scale and stand any object in that same box. */
+function fitFigure(obj) {
+  obj.updateMatrixWorld(true);
+  const size = new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
+  if (!size.y) return;
+
+  obj.scale.multiplyScalar(FIGURE_HEIGHT / size.y);
+  obj.updateMatrixWorld(true);
+
+  const b = new THREE.Box3().setFromObject(obj);
+  obj.position.x -= (b.min.x + b.max.x) / 2;
+  obj.position.z -= (b.min.z + b.max.z) / 2;
+  obj.position.y += FIGURE_FLOOR - b.min.y;
 }
 
-function organMaterial(color) {
-  return new THREE.MeshBasicMaterial({
-    color: new THREE.Color(color),
-    transparent: true,
-    opacity: 0.42,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
+function disposeGroup(obj) {
+  obj.traverse((o) => o.geometry?.dispose());
 }
 
 /* ---------- geometry helpers ---------- */
 
-const V = (x, y, z) => new THREE.Vector3(x, y, z);
-
-/** A capsule stretched between two points — one bone or limb segment. */
-function limb(a, b, radius, material) {
+/**
+ * A limb segment swept between two points, with a radius profile along
+ * its length. This is what gives the figure muscle bellies instead of
+ * the sausage look of a plain capsule.
+ *
+ * @param {THREE.Vector3} a start (t = 0)
+ * @param {THREE.Vector3} b end   (t = 1)
+ * @param {Array<[number, number]>} profile [t, radius] pairs, t ascending
+ */
+function taperedLimb(a, b, profile, material, segments = 20) {
   const dir = new THREE.Vector3().subVectors(b, a);
   const len = dir.length();
-  const geo = new THREE.CapsuleGeometry(radius, Math.max(len - radius * 2, 0.01), 4, 12);
-  const mesh = new THREE.Mesh(geo, material);
+  const pts = profile.map(([t, r]) =>
+    new THREE.Vector2(Math.max(r, 0.002), (t - 0.5) * len)
+  );
+  const mesh = new THREE.Mesh(new THREE.LatheGeometry(pts, segments), material);
   mesh.position.copy(a).add(b).multiplyScalar(0.5);
   mesh.quaternion.setFromUnitVectors(V(0, 1, 0), dir.normalize());
   return mesh;
 }
 
-function buildBody() {
-  const group = new THREE.Group();
-  const shell = fresnelMaterial(0x7fe3d8, 2.2, 1.15);
-  const bone = fresnelMaterial(0x9fd0e8, 2.6, 0.85);
-
-  /* Torso — a lathe profile, squashed front-to-back into a human section. */
-  const profile = [
-    [0.030, -0.34], [0.290, -0.28], [0.310, -0.06], [0.262, 0.20],
-    [0.288, 0.46], [0.330, 0.74], [0.315, 0.94], [0.190, 1.06], [0.030, 1.10],
-  ].map(([r, y]) => new THREE.Vector2(r, y));
-
-  const torso = new THREE.Mesh(new THREE.LatheGeometry(profile, 28), shell);
-  torso.scale.set(1.14, 1, 0.74);
-  group.add(torso);
-
-  /* Head + neck */
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.21, 26, 20), shell);
-  head.position.set(0, 1.45, 0.01);
-  head.scale.set(0.92, 1.16, 1.02);
-  group.add(head);
-  group.add(limb(V(0, 1.06, 0), V(0, 1.30, 0), 0.085, shell));
-
-  /* Arms */
-  for (const s of [-1, 1]) {
-    group.add(limb(V(s * 0.34, 0.96, 0), V(s * 0.47, 0.40, 0.02), 0.088, shell)); // upper
-    group.add(limb(V(s * 0.47, 0.40, 0.02), V(s * 0.545, -0.14, 0.04), 0.070, shell)); // fore
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.072, 12, 10), shell);
-    hand.position.set(s * 0.56, -0.24, 0.05);
-    hand.scale.set(0.8, 1.25, 0.5);
-    group.add(hand);
-  }
-
-  /* Legs */
-  for (const s of [-1, 1]) {
-    group.add(limb(V(s * 0.155, -0.30, 0), V(s * 0.175, -0.98, 0.01), 0.115, shell)); // thigh
-    group.add(limb(V(s * 0.175, -0.98, 0.01), V(s * 0.185, -1.62, 0.02), 0.088, shell)); // shin
-    const foot = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 10), shell);
-    foot.position.set(s * 0.185, -1.70, 0.09);
-    foot.scale.set(0.75, 0.5, 1.6);
-    group.add(foot);
-  }
-
-  /* Spine — reads as the axis of the figure */
-  group.add(limb(V(0, -0.28, -0.09), V(0, 1.04, -0.06), 0.032, bone));
-
-  /* Ribs — a few arcs are enough to say "thorax" */
-  for (let i = 0; i < 5; i++) {
-    const y = 0.86 - i * 0.115;
-    const r = 0.30 + Math.sin(i * 0.6) * 0.022;
-    const rib = new THREE.Mesh(new THREE.TorusGeometry(r, 0.011, 6, 26, Math.PI * 1.15), bone);
-    rib.position.set(0, y, -0.02);
-    rib.rotation.set(Math.PI / 2, 0, Math.PI * 0.42);
-    rib.scale.set(1.1, 0.72, 1);
-    group.add(rib);
-  }
-
-  /* Organs — the glow you see through the shell */
-  const organs = [
-    { c: 0xffc46b, p: [0, 1.46, 0.0], s: [0.15, 0.13, 0.15] },     // brain
-    { c: 0xff7a95, p: [-0.05, 0.72, 0.04], s: [0.10, 0.11, 0.09] }, // heart
-    { c: 0x6ee7db, p: [0.17, 0.74, 0.0], s: [0.11, 0.16, 0.10] },   // lung R
-    { c: 0x6ee7db, p: [-0.19, 0.74, 0.0], s: [0.11, 0.16, 0.10] },  // lung L
-    { c: 0xe0a45c, p: [0.14, 0.40, 0.04], s: [0.14, 0.09, 0.10] },  // liver
-    { c: 0x9ad46e, p: [-0.12, 0.32, 0.04], s: [0.10, 0.09, 0.08] }, // stomach
-    { c: 0x8fb8ff, p: [0.13, 0.16, -0.05], s: [0.06, 0.08, 0.05] }, // kidney R
-    { c: 0x8fb8ff, p: [-0.13, 0.16, -0.05], s: [0.06, 0.08, 0.05] },// kidney L
-    { c: 0xc9a55c, p: [0, -0.02, 0.02], s: [0.14, 0.09, 0.10] },    // pelvic
-  ];
-  for (const o of organs) {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 12), organMaterial(o.c));
-    m.position.set(...o.p);
-    m.scale.set(...o.s);
-    group.add(m);
-  }
-
-  return group;
+/** An ellipsoid — joints, cranium, hands, feet. */
+function blob(material, pos, scale, segments = 20) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(1, segments, segments - 4), material);
+  m.position.set(...pos);
+  m.scale.set(...scale);
+  return m;
 }
 
-/* ---------- hotspot sprites ---------- */
+/* ---------- the body ---------- */
+
+/** A surface of revolution from a [radius, y] profile — one continuous skin. */
+function lathe(profile, material, segments = 36) {
+  return new THREE.Mesh(
+    new THREE.LatheGeometry(
+      profile.map(([r, y]) => new THREE.Vector2(Math.max(r, 0.001), y)),
+      segments
+    ),
+    material
+  );
+}
+
+function buildBody(material) {
+  const g = new THREE.Group();
+
+  /* --- torso ---------------------------------------------------
+     One continuous surface from pubis to shoulder shelf: pelvis
+     flare, waist pinch, ribcage swell, then the shoulder slope.
+     Squashed front-to-back so the section is a human oval.
+     Ball joints are deliberately avoided everywhere — they are what
+     made the earlier version read as an artist's mannequin. */
+  const torso = lathe([
+    [0.001, -0.02], [0.120, 0.00], [0.196, 0.05], [0.232, 0.12],
+    [0.244, 0.22], [0.238, 0.33], [0.226, 0.44], [0.234, 0.55],
+    [0.256, 0.66], [0.276, 0.78], [0.292, 0.88], [0.288, 0.97],
+    [0.252, 1.03], [0.168, 1.07], [0.092, 1.09],
+  ], material);
+  torso.scale.set(1.34, 1, 0.73);
+  g.add(torso);
+
+  /* Glutes — without these the pelvis has no silhouette in profile. */
+  const glutes = blob(material, [0, 0.075, -0.085], [0.285, 0.155, 0.125], 24);
+  g.add(glutes);
+
+  /* --- neck and head ---
+     The head is a single lathe: chin, jaw taper, cranium, crown.
+     One surface, so there is no seam running across the face. */
+  g.add(taperedLimb(V(0, 1.00, -0.012), V(0, 1.26, 0.008),
+    [[0, 0.104], [0.45, 0.081], [1, 0.078]], material, 24));
+
+  const head = lathe([
+    [0.001, 1.222], [0.060, 1.240], [0.100, 1.272], [0.129, 1.310],
+    [0.149, 1.354], [0.160, 1.404], [0.163, 1.458], [0.157, 1.510],
+    [0.140, 1.562], [0.107, 1.608], [0.059, 1.642], [0.001, 1.658],
+  ], material, 32);
+  head.scale.set(0.96, 1, 1.10);
+  head.position.z = 0.012;
+  g.add(head);
+
+  /* --- arms ---
+     The upper arm starts wide enough to double as the deltoid, so the
+     shoulder joins the torso without a separate ball. */
+  for (const s of [-1, 1]) {
+    const shoulder = V(s * 0.338, 1.010, 0);
+    const elbow    = V(s * 0.428, 0.495, 0.012);
+    const wrist    = V(s * 0.466, 0.042, 0.026);
+
+    g.add(taperedLimb(shoulder, elbow, [
+      [0, 0.132], [0.14, 0.126], [0.34, 0.110], [0.70, 0.082], [1, 0.066],
+    ], material, 24));
+
+    g.add(taperedLimb(elbow, wrist, [
+      [0, 0.068], [0.22, 0.080], [0.55, 0.069], [0.85, 0.048], [1, 0.041],
+    ], material, 24));
+
+    /* Hand — flattened, tapering to the fingers. */
+    const hand = taperedLimb(V(s * 0.470, 0.026, 0.026), V(s * 0.476, -0.142, 0.028), [
+      [0, 0.041], [0.30, 0.054], [0.75, 0.049], [1, 0.022],
+    ], material, 16);
+    hand.scale.set(1, 1, 0.52);
+    g.add(hand);
+  }
+
+  /* --- legs ---
+     Thighs touch at the groin and separate below, as they actually do. */
+  for (const s of [-1, 1]) {
+    const hip   = V(s * 0.132, 0.140, 0);
+    const knee  = V(s * 0.178, -0.720, 0.012);
+    const ankle = V(s * 0.192, -1.545, -0.005);
+
+    g.add(taperedLimb(hip, knee, [
+      [0, 0.168], [0.16, 0.162], [0.42, 0.142], [0.78, 0.108], [1, 0.090],
+    ], material, 26));
+
+    g.add(taperedLimb(knee, ankle, [
+      [0, 0.092], [0.16, 0.107], [0.40, 0.095], [0.80, 0.055], [1, 0.044],
+    ], material, 24));
+
+    /* Foot — a wedge running forward from the ankle. */
+    const foot = taperedLimb(V(s * 0.192, -1.610, -0.045), V(s * 0.196, -1.678, 0.135), [
+      [0, 0.052], [0.35, 0.062], [0.75, 0.055], [1, 0.030],
+    ], material, 16);
+    foot.scale.set(1, 1, 0.62);
+    g.add(foot);
+  }
+
+  return g;
+}
+
+/* ---------- hotspot marker texture ---------- */
 
 function ringTexture() {
   const c = document.createElement("canvas");
@@ -202,7 +249,7 @@ function ringTexture() {
  * @param {HTMLCanvasElement} canvas
  * @param {{ onSelect?: (payload:{region:string,label:string,x:number,y:number}|null)=>void }} opts
  */
-export function initAnatomy(canvas, { onSelect } = {}) {
+export function initAnatomy(canvas, { onSelect, modelUrl = "" } = {}) {
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
@@ -211,23 +258,77 @@ export function initAnatomy(canvas, { onSelect } = {}) {
   });
   renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-  camera.position.set(0, 0.25, 4.5);
+  camera.position.set(0.5, 0.35, 5.2);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-  const key = new THREE.DirectionalLight(0xbfe8ff, 1.1);
-  key.position.set(2, 3, 4);
+  /* Three-point lighting — this is what makes it read as sculpted
+     rather than flat. Warm key, cool fill, teal rim from behind. */
+  scene.add(new THREE.HemisphereLight(0xcfe8f5, 0x2b2318, 0.68));
+
+  const key = new THREE.DirectionalLight(0xffe6c2, 1.85);
+  key.position.set(2.6, 3.2, 3.4);
   scene.add(key);
+
+  const fill = new THREE.DirectionalLight(0xbcd8ff, 0.72);
+  fill.position.set(-3.2, 0.8, 2.2);
+  scene.add(fill);
+
+  const rim = new THREE.DirectionalLight(0xa8f0e6, 0.62);
+  rim.position.set(-1.4, 1.8, -3.6);
+  scene.add(rim);
+
+  const skin = new THREE.MeshStandardMaterial({
+    color: 0xd8c1a8,
+    roughness: 0.66,
+    metalness: 0.0,
+    flatShading: false,
+  });
 
   const root = new THREE.Group();
   scene.add(root);
-  root.add(buildBody());
 
-  /* Ground halo — anchors the figure in space */
+  /* Show the built-in figure immediately, then swap in the real model
+     when it finishes downloading. If the model 404s or fails to parse,
+     the built-in figure simply stays — the page is never left empty. */
+  let body = buildBody(skin);
+  root.add(body);
+
+  if (modelUrl) {
+    import("three/addons/loaders/GLTFLoader.js")
+      .then(({ GLTFLoader }) => new Promise((resolve, reject) => {
+        new GLTFLoader().load(modelUrl, resolve, undefined, reject);
+      }))
+      .then(({ scene: model }) => {
+        // The scan has no UVs or textures, so give it the same lit
+        // material as the fallback and it matches the rest of the page.
+        model.traverse((o) => {
+          if (!o.isMesh) return;
+          o.material = skin;
+          // Sculpt exports (ZBrush OBJ in particular) often carry no
+          // normals at all, which renders the whole body matte black.
+          // Derive them from the winding when they are missing — but
+          // never overwrite normals a model actually shipped with.
+          if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+        });
+        fitFigure(model);
+        root.remove(body);
+        disposeGroup(body);
+        body = model;
+        root.add(model);
+      })
+      .catch((err) => {
+        console.warn("Anatomy model unavailable — using the built-in figure:", err);
+      });
+  }
+
+  /* Ground halo */
   const halo = new THREE.Mesh(
-    new THREE.RingGeometry(0.55, 1.5, 48),
+    new THREE.RingGeometry(0.5, 1.45, 48),
     new THREE.MeshBasicMaterial({
       color: 0x4fd1c5,
       transparent: true,
@@ -238,12 +339,32 @@ export function initAnatomy(canvas, { onSelect } = {}) {
     })
   );
   halo.rotation.x = -Math.PI / 2;
-  halo.position.y = -1.82;
+  halo.position.y = -1.78;
   root.add(halo);
 
-  /* Hotspots */
+  /* Region highlights — a soft glow through the body when a region
+     is open, the way an anatomy atlas isolates a system. */
+  const glowGeo = new THREE.SphereGeometry(1, 22, 16);
+  const highlights = new Map();
+
+  /* Markers */
   const tex = ringTexture();
   const pins = HOTSPOTS.map((h) => {
+    const glow = new THREE.Mesh(
+      glowGeo,
+      new THREE.MeshBasicMaterial({
+        color: 0xe3c88a,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      })
+    );
+    glow.position.set(...h.core);
+    glow.scale.set(...h.glow);
+    root.add(glow);
+    highlights.set(h.region, glow);
+
     const sprite = new THREE.Sprite(
       new THREE.SpriteMaterial({
         map: tex,
@@ -265,13 +386,13 @@ export function initAnatomy(canvas, { onSelect } = {}) {
   controls.enableDamping = true;
   controls.dampingFactor = 0.07;
   controls.enablePan = false;
-  controls.minDistance = 3.0;
-  controls.maxDistance = 7.0;
+  controls.minDistance = 3.4;
+  controls.maxDistance = 8.0;
   controls.minPolarAngle = Math.PI * 0.16;
   controls.maxPolarAngle = Math.PI * 0.84;
   controls.autoRotate = !REDUCED;
   controls.autoRotateSpeed = 0.7;
-  controls.target.set(0, 0.12, 0);
+  controls.target.set(0, 0.05, 0);
 
   /* --- picking --- */
   const ray = new THREE.Raycaster();
@@ -288,7 +409,6 @@ export function initAnatomy(canvas, { onSelect } = {}) {
     return ray.intersectObjects(pins, false)[0]?.object ?? null;
   }
 
-  /** Project a pin to CSS pixels inside the canvas, for the floating card. */
   function screenPos(sprite) {
     const v = sprite.position.clone().applyMatrix4(root.matrixWorld).project(camera);
     const r = canvas.getBoundingClientRect();
@@ -352,23 +472,27 @@ export function initAnatomy(canvas, { onSelect } = {}) {
     const t = clock.getElapsedTime();
 
     pins.forEach((p, i) => {
-      const base = p === selected ? 0.40 : p === hovered ? 0.36 : 0.30;
+      const isSel = p === selected;
+      const base = isSel ? 0.40 : p === hovered ? 0.36 : 0.30;
       p.scale.setScalar(base + Math.sin(t * 2 + i * 1.1) * 0.022);
-      p.material.opacity = p === selected ? 1 : 0.72 + Math.sin(t * 2 + i * 1.1) * 0.15;
+      p.material.opacity = isSel ? 1 : 0.72 + Math.sin(t * 2 + i * 1.1) * 0.15;
+
+      // Ease the region glow toward its target so it fades, not snaps.
+      const glow = highlights.get(p.userData.region);
+      const target = isSel ? 0.42 : p === hovered ? 0.16 : 0;
+      glow.material.opacity += (target - glow.material.opacity) * 0.12;
     });
 
-    // Breathing — subtle, keeps the figure alive without distracting.
-    if (!REDUCED) root.position.y = Math.sin(t * 0.7) * 0.018;
+    if (!REDUCED) root.position.y = Math.sin(t * 0.7) * 0.016;
 
     controls.update();
     renderer.render(scene, camera);
 
-    // The card follows the pin while the model rotates.
     if (selected) emit();
   }
   frame();
 
-  /* Stop rendering when the tab or section is out of view — saves battery. */
+  /* Stop rendering when off-screen — saves battery on iPad. */
   const vis = new IntersectionObserver(([e]) => {
     if (e.isIntersecting && !running) {
       running = true;
@@ -382,11 +506,9 @@ export function initAnatomy(canvas, { onSelect } = {}) {
   vis.observe(canvas);
 
   return {
-    /** Programmatically open a region (used by the legend buttons). */
     focusRegion(region) {
-      const pin = pins.find((p) => p.userData.region === region) ?? null;
-      selected = pin;
-      controls.autoRotate = pin ? false : !REDUCED;
+      selected = pins.find((p) => p.userData.region === region) ?? null;
+      controls.autoRotate = selected ? false : !REDUCED;
       emit();
     },
     clearSelection() {
