@@ -264,7 +264,7 @@ export function initAnatomy(canvas, { onSelect, modelUrl = "" } = {}) {
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-  camera.position.set(0.5, 0.35, 5.2);
+  camera.position.set(0.45, 0.30, 5.9);
 
   /* Three-point lighting — this is what makes it read as sculpted
      rather than flat. Warm key, cool fill, teal rim from behind. */
@@ -387,12 +387,12 @@ export function initAnatomy(canvas, { onSelect, modelUrl = "" } = {}) {
   controls.dampingFactor = 0.07;
   controls.enablePan = false;
   controls.minDistance = 3.4;
-  controls.maxDistance = 8.0;
+  controls.maxDistance = 9.0;
   controls.minPolarAngle = Math.PI * 0.16;
   controls.maxPolarAngle = Math.PI * 0.84;
   controls.autoRotate = !REDUCED;
   controls.autoRotateSpeed = 0.7;
-  controls.target.set(0, 0.05, 0);
+  controls.target.set(0, 0.02, 0);
 
   /* --- picking --- */
   const ray = new THREE.Raycaster();
