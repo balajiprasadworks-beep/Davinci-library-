@@ -28,6 +28,8 @@ python3 -m http.server 8080
 | `cart.html` | Cart and QR checkout |
 | `dashboard.html` | Orders, stats, quick links |
 | `profile.html` | Buyer details, stored locally |
+| `legal.html` | Terms of sale, refunds, privacy, medical disclaimer |
+| `404.html` | Branded not-found page (Vercel serves it automatically) |
 
 Every page carries the same two-tier header: **Dashboard** and **Go to Cart** on
 the top row, **View Cart** (with a live count) and **Profile** below it.
@@ -146,12 +148,48 @@ pip install trimesh fast-simplification numpy scipy
 python3 tools/obj-to-glb.py
 ```
 
-## Vendored libraries
+## No third-party requests
 
-Three.js and GSAP live in `vendor/` rather than loading from a CDN. This is
-deliberate: a student on hospital wifi with a blocked CDN still gets a working
-site. Nothing on the page depends on a third-party host except Google Fonts,
-which degrades to system fonts if blocked.
+Three.js, GSAP and the three fonts all live in `vendor/` and are served from
+this domain. Nothing — not a font, not a script, not an analytics beacon —
+is fetched from anyone else.
+
+This is deliberate on three counts: a student on hospital wifi with a blocked
+CDN still gets a working site; there is no third party collecting IP addresses
+from your buyers, which is what the privacy section promises; and there is no
+outage but your own. `tools/check.mjs` asserts it, failing the build if any
+external host creeps back in.
+
+## Checks
+
+```bash
+npm i -D playwright
+python3 -m http.server 8099
+node tools/check.mjs
+```
+
+Drives a real browser over the 3D figure, both filter levels, the cart, QR
+checkout, the dashboard, profile persistence, the legal and 404 pages, the
+iPad layout, and the no-third-party rule. Exits non-zero on failure, so it
+drops straight into CI. `BASE_URL=https://… node tools/check.mjs` runs it
+against a deployed build.
+
+## The share image
+
+`assets/img/og.png` is what appears when someone drops a link into WhatsApp or
+Twitter. Regenerate it after changing the headline or the model:
+
+```bash
+node tools/make-og.mjs
+```
+
+It renders the real figure, cropped at the hip — a full-frontal figure is fine
+on the page in context, but it becomes a thumbnail in group chats, where it
+reads very differently.
+
+**One thing to change when you get a custom domain:** the `og:image` tags use a
+relative path. Most crawlers resolve that, but Twitter prefers an absolute URL —
+swap them to `https://yourdomain/assets/img/og.png` once the domain is live.
 
 ---
 
@@ -165,8 +203,20 @@ Your site lands at `https://balajiprasadworks-beep.github.io/davinci-library-/`.
 
 ---
 
+## Before you trade at scale
+
+`legal.html` is a plain-English draft covering terms of sale, refunds, privacy
+and a medical disclaimer. It is written to be honest about how this specific
+site actually works, but it is **not legal advice**. Three things still need
+your input:
+
+- Your registered business name and address.
+- Governing law and jurisdiction.
+- A review by someone qualified, particularly on the refund terms and the
+  medical disclaimer — you are selling clinical study material.
+
 ## Notes on privacy
 
 Cart, orders and profile live in the buyer's `localStorage` and never leave
 their browser until they choose to send the order email. No analytics, no
-trackers, no third-party scripts beyond the Three.js and GSAP CDNs.
+trackers, and no third-party requests of any kind — see above.

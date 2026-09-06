@@ -1,4 +1,60 @@
 /* ============================================================
+   FONTS — self-hosted.
+   Served from this domain so the site has no third-party requests
+   at all: nothing to block, nothing to leak an IP address to.
+   ============================================================ */
+
+@font-face {
+  font-family: "Cormorant Garamond";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../../vendor/fonts/cormorant-garamond-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Cormorant Garamond";
+  font-style: italic;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../../vendor/fonts/cormorant-garamond-latin-600-italic.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../vendor/fonts/inter-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../../vendor/fonts/inter-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../../vendor/fonts/inter-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../vendor/fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../../vendor/fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
+}
+
+/* ============================================================
    DaVinci's Medical Library — Design System
    Renaissance manuscript × clinical hologram
    ============================================================ */
@@ -42,8 +98,8 @@
   --r-lg: 20px;
   --r-xl: 28px;
 
-  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.45);
-  --shadow-lift: 0 20px 60px rgba(0, 0, 0, 0.6);
+  --shadow-glass: 0 8px 32px rgba(4, 8, 18, 0.55);
+  --shadow-lift: 0 20px 60px rgba(4, 8, 18, 0.68);
   --shadow-gold: 0 0 40px rgba(201, 165, 92, 0.18);
 
   --font-display: "Cormorant Garamond", Georgia, "Times New Roman", serif;
@@ -115,6 +171,7 @@ h1, h2, h3, h4 {
 }
 
 h1 { font-size: clamp(2.4rem, 6vw, 4.4rem); }
+h1, h2, h3, h4 { text-wrap: balance; }
 h2 { font-size: clamp(1.8rem, 4vw, 2.8rem); }
 h3 { font-size: 1.35rem; }
 
@@ -130,6 +187,7 @@ p { margin: 0 0 1em; }
 }
 
 .lede {
+  text-wrap: pretty;
   font-size: 1.05rem;
   color: var(--text-300);
   max-width: 62ch;
@@ -315,6 +373,7 @@ p { margin: 0 0 1em; }
 .hero {
   position: relative;
   min-height: calc(100vh - var(--header-h));
+  min-height: calc(100dvh - var(--header-h));
   display: grid;
   grid-template-columns: 1fr 1fr;
   align-items: center;
@@ -603,6 +662,7 @@ p { margin: 0 0 1em; }
 
 .price {
   font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
   font-size: 1.6rem;
   font-weight: 600;
   color: var(--gold-400);
@@ -805,6 +865,7 @@ p { margin: 0 0 1em; }
 .summary { padding: 26px; position: sticky; top: calc(var(--header-h) + 20px); }
 
 .summary-row {
+  font-variant-numeric: tabular-nums;
   display: flex;
   justify-content: space-between;
   align-items: baseline;
@@ -904,6 +965,7 @@ p { margin: 0 0 1em; }
 }
 .stat-value {
   font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
   font-size: 2.4rem;
   font-weight: 600;
   color: var(--gold-400);
@@ -1007,3 +1069,131 @@ p { margin: 0 0 1em; }
   .reveal { opacity: 1 !important; transform: none !important; }
   html { scroll-behavior: auto; }
 }
+
+/* ============================================================
+   FOCUS, PRESS AND MOTION
+   ============================================================ */
+
+/* A visible focus ring is not optional. The inputs previously set
+   outline:none and replaced it with only a border tint, which is not
+   enough to track focus by eye. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--gold-400);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+.field input:focus-visible,
+.field select:focus-visible { outline-offset: 1px; }
+
+/* Press feedback. Without this, taps on a touchscreen feel dead —
+   these rules follow :hover so they win while the pointer is down. */
+.btn:active { transform: translateY(1px) scale(0.988); }
+.icon-btn:active,
+.subnav button:active,
+.remove-btn:active { transform: translateY(1px); }
+.note-card:active,
+.portal:active { transform: translateY(-3px); }
+
+/* Skip link — the first tab stop on every page. */
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  z-index: 200;
+  padding: 11px 20px;
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  background: var(--gold-400);
+  color: var(--ink-900);
+  font-size: 13px;
+  font-weight: 600;
+  transition: top 0.2s;
+}
+.skip-link:focus { top: 0; color: var(--ink-900); }
+
+/* ============================================================
+   FORM VALIDATION
+   ============================================================ */
+
+.field-error {
+  display: none;
+  margin-top: 7px;
+  font-size: 12.5px;
+  color: var(--err);
+}
+.field.has-error .field-error { display: block; }
+.field.has-error input,
+.field.has-error select { border-color: rgba(248, 113, 113, 0.6); }
+
+/* ============================================================
+   PROSE — legal pages
+   ============================================================ */
+
+.prose { max-width: 68ch; }
+.prose h2 {
+  margin-top: 52px;
+  font-size: 1.75rem;
+  padding-top: 24px;
+  border-top: 1px solid var(--glass-brd);
+}
+.prose h2:first-of-type { margin-top: 8px; border-top: 0; padding-top: 0; }
+.prose h3 { margin-top: 30px; font-size: 1.1rem; color: var(--gold-400); }
+.prose p, .prose li { color: var(--text-300); }
+.prose ul { padding-left: 20px; margin-bottom: 1.2em; }
+.prose li { margin-bottom: 9px; }
+.prose strong { color: var(--text-100); font-weight: 600; }
+
+.legal-nav { display: flex; flex-wrap: wrap; gap: 9px; margin-bottom: 40px; }
+
+/* ============================================================
+   404
+   ============================================================ */
+
+.notfound { padding: 110px 0 90px; text-align: center; }
+.notfound .code {
+  font-family: var(--font-display);
+  font-size: clamp(5rem, 18vw, 10rem);
+  line-height: 0.9;
+  color: var(--gold-400);
+  opacity: 0.28;
+  margin-bottom: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.notfound-actions {
+  display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 28px;
+}
+
+/* ============================================================
+   UTILITIES — these replace the inline style attributes that were
+   scattered through the markup.
+   ============================================================ */
+
+.u-mt-sm { margin-top: 12px; }
+.u-mt-md { margin-top: 18px; }
+.u-mt-lg { margin-top: 44px; }
+.u-narrow { max-width: 520px; }
+.u-pad { padding: 28px; }
+.u-pad-sm { padding: 22px; }
+
+.panel-note { font-size: 13px; color: var(--text-300); margin: 0 0 14px; }
+
+.order-confirm { max-width: 640px; margin-inline: auto; }
+.order-ref {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  color: var(--gold-400);
+}
+.order-note { max-width: 46ch; margin-inline: auto; }
+.order-actions {
+  display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px;
+}
+.order-line { align-items: flex-start; }
+.order-items {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text-300);
+}
+
+.saving { color: var(--ok); }
+.u-center-block { margin-inline: auto; }
