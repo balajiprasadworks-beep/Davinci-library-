@@ -40,7 +40,19 @@ the top row, **View Cart** (with a live count) and **Profile** below it.
 
 ### 1. Your payment QR — `js/config.js` + `assets/img/`
 
-Save your QR image as **`assets/img/payment-qr.png`**, then fill in:
+**Already configured** — `balajiprasadworks-1@oksbi`, Balaji Prasad. Change it
+only if you move to a different UPI account.
+
+To swap in a new one, hand the tool a screenshot from GPay/PhonePe:
+
+```bash
+pip install pillow numpy opencv-python-headless
+python3 tools/prep-qr.py ~/Downloads/new-qr.png
+```
+
+It crops to the symbol, rebuilds the quiet zone on white, and **refuses to
+write the file if the crop changes what the code decodes to** — a QR that no
+longer scans looks perfectly fine to the eye. Then update `js/config.js`:
 
 ```js
 export const PAYMENT = {
@@ -50,8 +62,8 @@ export const PAYMENT = {
 };
 ```
 
-Until that image exists, checkout shows a clear placeholder instead of a broken
-image — so the site is safe to publish before the QR is ready.
+If the image is ever missing, checkout shows a labelled placeholder rather than
+a broken image, and `tools/check.mjs` fails.
 
 ### 2. Your contact routing — `js/config.js`
 

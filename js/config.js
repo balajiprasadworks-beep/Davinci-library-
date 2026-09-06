@@ -24,8 +24,8 @@ export const PAYMENT = {
      instead of a broken image.
      --------------------------------------------------------- */
   qrImage: "assets/img/payment-qr.png",
-  upiId: "",              // e.g. "yourname@okhdfcbank"
-  accountName: "",        // name shown on the UPI account
+  upiId: "balajiprasadworks-1@oksbi",
+  accountName: "Balaji Prasad",
 
   /* How buyers get their notes after paying. */
   deliveryNote:

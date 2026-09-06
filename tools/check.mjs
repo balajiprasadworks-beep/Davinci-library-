@@ -25,9 +25,9 @@ const browser = await chromium.launch({
 const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
 const page = await ctx.newPage();
 
-// The site is fully self-hosted; the only expected miss is the payment QR
-// placeholder, which 404s until the seller drops their image in.
-const EXPECTED_MISSING = /payment-qr/;
+// Nothing is allowed to 404 any more: the site is fully self-hosted and the
+// payment QR is committed. A missing QR would silently break checkout.
+const EXPECTED_MISSING = /(?!)/;
 
 // A 404 surfaces as a console error whose text does NOT include the URL, so
 // filtering console text cannot tell an expected miss from a real one. Watch
@@ -150,6 +150,21 @@ const lines = await page.locator(".cart-line").count();
 const total = await page.locator(".summary-row.total .price").textContent();
 log("cart lines:", lines, "· total:", total.trim());
 if (lines !== 2) problems.push(`cart should hold 2 lines, saw ${lines}`);
+
+// The QR is the entire payment path — assert it actually rendered.
+const qr = await page.evaluate(() => {
+  const img = document.querySelector(".qr-frame img");
+  return {
+    present: !!img,
+    loaded: !!img && img.complete && img.naturalWidth > 0,
+    placeholder: !!document.querySelector(".qr-frame .qr-missing"),
+    upi: document.querySelector(".qr-upi")?.textContent.trim() ?? "",
+  };
+});
+log("payment QR:", JSON.stringify(qr));
+if (!qr.loaded) problems.push("payment QR image did not load on the cart page");
+if (qr.placeholder) problems.push("cart is still showing the QR placeholder");
+if (!qr.upi.includes("@")) problems.push("UPI ID not shown at checkout");
 
 await page.screenshot({ path: `${OUT}/cart.png`, fullPage: true });
 
