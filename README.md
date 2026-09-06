@@ -195,11 +195,29 @@ swap them to `https://yourdomain/assets/img/og.png` once the domain is live.
 
 ## Publishing
 
-The site is static, so anything works. GitHub Pages is the shortest path:
+The site is static with no build step, so any static host works.
 
-**Settings → Pages → Source: Deploy from a branch → `main` / root.**
+### Vercel (recommended — auto-deploys on push)
 
-Your site lands at `https://balajiprasadworks-beep.github.io/davinci-library-/`.
+In the Vercel dashboard: **project → Settings → Git → Connect Git Repository →**
+`balajiprasadworks-beep/Davinci-library-`. Set the production branch to the
+branch you are pushing. Leave the framework preset as **Other** and the build
+command empty — there is nothing to build.
+
+`vercel.json` sets the caching and security headers:
+
+- `/vendor/*` is cached for 30 days. Those filenames carry pinned versions.
+- `/assets/model/*` is cached for a week and revalidated, since the model can
+  be replaced.
+- HTML is never cached, so a new note appears the moment you push.
+
+`404.html` is picked up automatically for unknown routes.
+
+### GitHub Pages
+
+**Settings → Pages → Source: Deploy from a branch → your branch / root.**
+Lands at `https://balajiprasadworks-beep.github.io/davinci-library-/`.
+Note that Pages ignores `vercel.json`, so you lose the cache headers.
 
 ---
 
