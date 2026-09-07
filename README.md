@@ -175,7 +175,7 @@ which name is wrong instead of guessing from a failing checkout. Or hit
 node tools/check-api.mjs
 ```
 
-27 tests, no server and no network — Redis and Resend are stubbed. Covers
+31 tests, no server and no network — Redis and Resend are stubbed. Covers
 server-side pricing, that a client-supplied total is ignored, validation,
 admin auth, and that marking an order delivered emails the buyer exactly once.
 
