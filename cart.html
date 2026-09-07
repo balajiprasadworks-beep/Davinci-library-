@@ -59,7 +59,6 @@
   }
 
   function qrPanelHTML(total) {
-    const hasUpi = Boolean(PAYMENT.upiId);
     return `
     <div class="glass qr-panel">
       <p class="eyebrow">Step 1 · Pay ${money(total)}</p>
@@ -67,8 +66,6 @@
         <img src="${PAYMENT.qrImage}" alt="Payment QR code"
              onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'qr-missing',textContent:'Payment QR not added yet — save your QR image to assets/img/payment-qr.png'}))">
       </div>
-      ${hasUpi ? `<p class="qr-upi">${esc(PAYMENT.upiId)}</p>` : ""}
-      ${PAYMENT.accountName ? `<p class="qr-note">${esc(PAYMENT.accountName)}</p>` : ""}
       <p class="qr-note u-mt-sm">${esc(PAYMENT.deliveryNote)}</p>
     </div>
 

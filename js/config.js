@@ -18,10 +18,13 @@ export const PAYMENT = {
   symbol: "₹",
 
   /* --- QR PAYMENT -------------------------------------------
-     1. Save your payment QR image as:  assets/img/payment-qr.png
-     2. Put your UPI ID below so buyers can also pay manually.
-     Until the image exists the checkout shows a clear placeholder
-     instead of a broken image.
+     Save your payment QR image as: assets/img/payment-qr.png
+     Until it exists the checkout shows a clear placeholder instead
+     of a broken image.
+
+     upiId / accountName are kept here as a record of what the QR
+     encodes, not shown on the page — checkout deliberately displays
+     only the QR itself, no name or ID typed out beside it.
      --------------------------------------------------------- */
   qrImage: "assets/img/payment-qr.png",
   upiId: "balajiprasadworks-1@oksbi",

@@ -208,20 +208,22 @@ const total = await page.locator(".summary-row.total .price").textContent();
 log("cart lines:", lines, "· total:", total.trim());
 if (lines !== 2) problems.push(`cart should hold 2 lines, saw ${lines}`);
 
-// The QR is the entire payment path — assert it actually rendered.
+// The QR is the entire payment path — assert it actually rendered. Checkout
+// deliberately shows only the code itself, no UPI ID or name typed out
+// beside it, so also assert that text stays off the page.
 const qr = await page.evaluate(() => {
   const img = document.querySelector(".qr-frame img");
   return {
     present: !!img,
     loaded: !!img && img.complete && img.naturalWidth > 0,
     placeholder: !!document.querySelector(".qr-frame .qr-missing"),
-    upi: document.querySelector(".qr-upi")?.textContent.trim() ?? "",
+    upiShown: !!document.querySelector(".qr-upi"),
   };
 });
 log("payment QR:", JSON.stringify(qr));
 if (!qr.loaded) problems.push("payment QR image did not load on the cart page");
 if (qr.placeholder) problems.push("cart is still showing the QR placeholder");
-if (!qr.upi.includes("@")) problems.push("UPI ID not shown at checkout");
+if (qr.upiShown) problems.push("UPI ID/name should not be shown at checkout, only the QR");
 
 await page.screenshot({ path: `${OUT}/cart.png`, fullPage: true });
 
