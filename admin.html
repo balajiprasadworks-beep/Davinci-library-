@@ -150,6 +150,56 @@
     </div>`;
   }
 
+  /**
+   * A separate, always-visible strip showing whether automatic file
+   * delivery is wired up — independent of whether Upstash/Resend are,
+   * since a seller might have orders working fine and still be wondering
+   * why "mark delivered" isn't attaching a link.
+   */
+  async function loadFileDeliveryStatus() {
+    const el = document.getElementById("file-delivery-status");
+    if (!el) return;
+    let h;
+    try {
+      h = await (await api("/api/health")).json();
+    } catch { return; }
+
+    const fd = h.fileDelivery;
+    if (!fd.configured) {
+      el.innerHTML = `
+        <div class="glass u-pad-sm u-mt-md">
+          <p class="eyebrow">File delivery not set up</p>
+          <p class="panel-note">
+            "Mark delivered" still emails the buyer, but it can't attach a
+            download link yet. Connect Vercel Blob storage
+            (<strong>Storage → Create Database → Blob</strong> in your
+            Vercel dashboard — this sets <code>BLOB_READ_WRITE_TOKEN</code>
+            for you), then run <code>tools/upload-note.mjs</code> for each
+            PDF and paste the URL it prints into that title's
+            <code>fileUrl</code> in <code>js/catalog.js</code>.
+          </p>
+        </div>`;
+    } else if (fd.titlesLinked === 0) {
+      el.innerHTML = `
+        <div class="glass u-pad-sm u-mt-md">
+          <p class="eyebrow">File delivery ready, nothing uploaded yet</p>
+          <p class="panel-note">
+            Storage is connected but no title has a <code>fileUrl</code> —
+            run <code>tools/upload-note.mjs</code> for a PDF and paste the
+            URL it prints into <code>js/catalog.js</code>.
+          </p>
+        </div>`;
+    } else {
+      el.innerHTML = `
+        <div class="glass u-pad-sm u-mt-md">
+          <p class="panel-note">
+            File delivery: <strong>${fd.titlesLinked}</strong> of
+            ${fd.titlesTotal} titles auto-attach on delivery.
+          </p>
+        </div>`;
+    }
+  }
+
   async function load() {
     if (!token()) { root.innerHTML = signInHTML(); return wireSignIn(); }
 
@@ -189,11 +239,14 @@
         <div class="stat"><div class="stat-label">Orders</div><div class="stat-value">${count}</div></div>
         <div class="stat"><div class="stat-label">Delivered value</div><div class="stat-value">${money(revenue)}</div></div>
       </div>
+      <div id="file-delivery-status"></div>
       ${orders.length
         ? orders.map(orderHTML).join("")
         : `<div class="glass empty-state">${icons.book}<h3>No orders yet</h3>
              <p>They will appear here the moment someone checks out.</p></div>`}
       <button class="btn btn-ghost btn-sm u-mt-md" id="signout">Forget this token</button>`;
+
+    loadFileDeliveryStatus();
 
     document.getElementById("signout").addEventListener("click", () => {
       setToken(""); load();

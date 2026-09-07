@@ -7,6 +7,7 @@
 import * as store from "./_lib/store.js";
 import * as mail from "./_lib/mail.js";
 import { STATUSES } from "./_lib/order.js";
+import { PRODUCTS } from "../js/catalog.js";
 import { json, methodIs, body, requireAdmin } from "./_lib/http.js";
 
 export default async function handler(req, res) {
@@ -36,7 +37,16 @@ export default async function handler(req, res) {
     // an already-delivered order does not email them twice.
     let notified = false;
     if (status === "delivered" && was !== "delivered") {
-      const result = await mail.deliveredToBuyer(order).catch((e) => ({ sent: false, reason: String(e) }));
+      // order.items is the checkout-time snapshot (id, title, price) and
+      // never carries a delivery link — merge in whatever fileUrl the
+      // catalogue holds today, so uploading a note after the order was
+      // placed still gets it linked correctly.
+      const resolvedItems = order.items.map((item) => ({
+        ...item,
+        fileUrl: PRODUCTS.find((p) => p.id === item.id)?.fileUrl,
+      }));
+      const result = await mail.deliveredToBuyer(order, resolvedItems)
+        .catch((e) => ({ sent: false, reason: String(e) }));
       notified = result.sent;
       if (!result.sent) console.warn("delivery email not sent:", result.reason);
     }

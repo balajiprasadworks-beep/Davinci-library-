@@ -16,7 +16,9 @@
    ============================================================ */
 
 import * as store from "./_lib/store.js";
+import * as blob from "./_lib/blob.js";
 import { canSend, seller } from "./_lib/mail.js";
+import { PRODUCTS } from "../js/catalog.js";
 import { json, methodIs, isAdmin } from "./_lib/http.js";
 
 export default async function handler(req, res) {
@@ -39,6 +41,14 @@ export default async function handler(req, res) {
     admin: {
       configured: env("ADMIN_TOKEN"),
       tokenAccepted: isAdmin(req),
+    },
+    fileDelivery: {
+      configured: blob.isConfigured(),
+      BLOB_READ_WRITE_TOKEN: env("BLOB_READ_WRITE_TOKEN"),
+      // How many catalogue titles actually have a fileUrl yet — the
+      // token being set doesn't mean anything has been uploaded.
+      titlesLinked: PRODUCTS.filter((p) => p.fileUrl).length,
+      titlesTotal: PRODUCTS.length,
     },
   };
 

@@ -94,18 +94,39 @@ export function receiptToBuyer(order) {
   });
 }
 
-/** Sent when the seller marks the order delivered. */
-export function deliveredToBuyer(order) {
+/**
+ * Sent when the seller marks the order delivered.
+ *
+ * `resolvedItems` is order.items with a `fileUrl` merged in wherever the
+ * catalogue has one (order-status.js resolves this, since order.items is
+ * a frozen snapshot from checkout and never carries delivery links). A
+ * title with no fileUrl yet — nothing uploaded, or an older order placed
+ * before this existed — falls back to a line saying it's on its way
+ * separately, so the email is never wrong, only ever less complete.
+ */
+export function deliveredToBuyer(order, resolvedItems = order.items) {
+  const withLink = resolvedItems.filter((i) => i.fileUrl);
+  const withoutLink = resolvedItems.filter((i) => !i.fileUrl);
+
+  const body = [
+    withLink.length
+      ? `Your notes are ready to download:\n\n` +
+        withLink.map((i) => `  ${i.title}\n  ${i.fileUrl}`).join("\n\n")
+      : null,
+    withoutLink.length
+      ? (withLink.length ? `\n` : ``) +
+        `Sending separately:\n` +
+        withoutLink.map((i) => `  ${i.title}`).join("\n")
+      : null,
+    ``,
+    `These links aren't linked from anywhere public — please don't share`,
+    `them around. If anything doesn't open, reply quoting ${order.ref}.`,
+  ].filter((x) => x !== null);
+
   return send({
     to: order.email,
     replyTo: seller() || undefined,
-    subject: `Order ${order.ref} — your notes are on the way`,
-    text: [
-      `Your notes have been sent.`,
-      ``,
-      lines(order),
-      ``,
-      `If they have not reached you, reply quoting ${order.ref}.`,
-    ].join("\n"),
+    subject: `Order ${order.ref} — your notes are ready`,
+    text: body.join("\n"),
   });
 }

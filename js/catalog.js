@@ -20,6 +20,10 @@
      meta    small chips: format, length, style
      region  anatomy hotspot this note pins to (see REGIONS)
      file    delivery filename, or null while it is still manual
+     fileUrl the Vercel Blob URL to attach in the delivery email, once
+             uploaded with tools/upload-note.mjs. Omit while a title
+             ships by manual email — the delivery email simply says
+             it's coming separately.
      status  'live'  purchasable (the default when omitted)
              'soon'  listed but NOT purchasable — shown dimmed, no
                      Add to Cart, and the server refuses to price it.
