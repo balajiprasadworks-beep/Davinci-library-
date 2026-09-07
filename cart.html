@@ -4,18 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Your Cart — DaVinci's Medical Library</title>
-<meta name="description" content="Review your notes and pay by QR.">
+<meta name="description" content="Review your notes and pay securely with Razorpay.">
 <meta name="color-scheme" content="dark">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="DaVinci's Medical Library">
 <meta property="og:title" content="Your Cart — DaVinci's Medical Library">
-<meta property="og:description" content="Review your notes and pay by QR.">
+<meta property="og:description" content="Review your notes and pay securely with Razorpay.">
 <meta property="og:image" content="assets/img/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Your Cart — DaVinci's Medical Library">
-<meta name="twitter:description" content="Review your notes and pay by QR.">
+<meta name="twitter:description" content="Review your notes and pay securely with Razorpay.">
 <meta name="twitter:image" content="assets/img/og.png">
 
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='none' stroke='%23c9a55c' stroke-width='2'/><path d='m20 11-3 7-7 3 3-7z' fill='%23e3c88a'/></svg>">
@@ -58,116 +58,65 @@
     </div>`;
   }
 
-  function qrPanelHTML(total) {
+  function payPanelHTML(total) {
     return `
-    <div class="glass qr-panel">
-      <p class="eyebrow">Step 1 · Pay ${money(total)}</p>
-      <div class="qr-frame">
-        <img src="${PAYMENT.qrImage}" alt="Payment QR code"
-             onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'qr-missing',textContent:'Payment QR not added yet — save your QR image to assets/img/payment-qr.png'}))">
-      </div>
-      <p class="qr-note u-mt-sm">${esc(PAYMENT.deliveryNote)}</p>
-    </div>
-
     <!-- novalidate: the browser's native bubbles would block submit before
            our own handler runs, leaving the styled inline errors unreachable.
            type/required stay for semantics and mobile keyboards. -->
-      <form class="glass qr-panel form-left" id="confirm-form" novalidate>
-      <p class="eyebrow">Step 2 · Confirm your payment</p>
+    <form class="glass qr-panel form-left" id="pay-form" novalidate>
+      <p class="eyebrow">Pay ${money(total)}</p>
+      <p class="qr-note">${esc(PAYMENT.checkoutNote)}</p>
       <div class="field" id="field-email">
         <label for="email">Email for delivery</label>
         <input type="email" id="email" name="email" required autocomplete="email"
                placeholder="you@example.com" aria-describedby="err-email">
         <p class="field-error" id="err-email">Enter the email address your notes should go to.</p>
       </div>
-      <div class="field" id="field-txn">
-        <label for="txn">UPI transaction / reference ID</label>
-        <input type="text" id="txn" name="txn" required
-               placeholder="e.g. 4483xxxxxxxx" aria-describedby="err-txn">
-        <p class="field-error" id="err-txn">Enter the reference your UPI app showed after payment.</p>
-      </div>
-      <button type="submit" class="btn btn-primary btn-block">I've paid — place my order</button>
+      <button type="submit" class="btn btn-primary btn-block">Pay ${money(total)} with Razorpay</button>
     </form>`;
   }
 
-  function confirmedHTML(order, onServer = false) {
-    const lines = order.items.map((i) => `${i.title} — ${money(i.price)}`).join("\n");
-    const body = encodeURIComponent(
-      `Order ${order.ref}\n\n${lines}\n\nTotal: ${money(order.total)}\nTransaction ID: ${order.txnId}\nDeliver to: ${order.email}`
-    );
-    const subject = encodeURIComponent(`Order ${order.ref} — DaVinci's Medical Library`);
-    const wa = SITE.whatsapp
-      ? `<a class="btn btn-ghost" href="https://wa.me/${SITE.whatsapp}?text=${body}" target="_blank" rel="noopener">Send on WhatsApp</a>`
-      : "";
-
+  function unavailableHTML(message) {
     return `
-    <div class="glass empty-state order-confirm">
-      ${icons.check}
-      <h2>Order placed</h2>
-      <p class="order-ref">
-        ${esc(order.ref)}
+    <div class="glass qr-panel form-left">
+      <p class="eyebrow">Checkout unavailable</p>
+      <p class="qr-note">${esc(message)}</p>
+      <p class="qr-note u-mt-sm">
+        Try again in a moment, or email
+        <a href="mailto:${SITE.contactEmail}">${esc(SITE.contactEmail)}</a> and we'll sort it out.
       </p>
-      ${onServer ? `
-      <p class="order-note">
-        We have your order and your payment reference — nothing else is needed
-        from you. Your notes reach <strong>${esc(order.email)}</strong> within
-        12 hours, once the payment is checked.
-      </p>
-      <div class="order-actions">
-        <a class="btn btn-primary" href="dashboard.html">View my orders</a>
-        <a class="btn btn-ghost" href="index.html">Keep browsing</a>
-      </div>` : `
-      <p class="order-note">
-        Your order is saved on this device. <strong>Send us the reference</strong>
-        so your notes can be released — they'll reach
-        <strong>${esc(order.email)}</strong> within 12 hours.
-      </p>
-      <div class="order-actions">
-        <a class="btn btn-primary" href="mailto:${SITE.contactEmail}?subject=${subject}&body=${body}">Email the reference</a>
-        ${wa}
-        <a class="btn btn-ghost" href="dashboard.html">View my orders</a>
-      </div>`}
     </div>`;
   }
 
   /**
-   * Send the order to the API, which prices it from the catalogue and
-   * records it so the seller actually learns about the sale.
-   *
-   * Falls back to the original browser-only flow whenever the API is
-   * absent, unconfigured or unreachable — on that path the buyer has to
-   * email the reference, which is exactly how the site worked before the
-   * backend existed. A missing environment variable must not cost a sale.
+   * Ask the server to price the cart and open a Razorpay Payment Link.
+   * There is no local/offline fallback any more — a sale either goes
+   * through Razorpay and gets delivered automatically, or it does not
+   * happen, rather than silently falling back to a manual flow.
    */
-  async function submitOrder({ email, txnId }) {
+  async function startCheckout({ email }) {
     const ids = cart.items().map((p) => p.id);
+    let res;
     try {
-      const res = await fetch("/api/order", {
+      res = await fetch("/api/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids, email, txnId }),
+        body: JSON.stringify({ ids, email }),
       });
-
-      if (res.ok) {
-        const server = await res.json();
-        // Keep a local copy so the dashboard still works offline.
-        return {
-          order: cart.saveOrder({ ...server, txnId, status: "awaiting-payment-check", recordedOnServer: true }),
-          onServer: true,
-        };
-      }
-
-      // The server rejected the input — show its reason on the field.
-      if (res.status === 400) {
-        const { error, field } = await res.json();
-        return { error: { message: error, field } };
-      }
-      // 404/501/502 all mean "no working backend": fall through.
     } catch {
-      // Offline, or the API route does not exist on this host.
+      return { unavailable: "Could not reach the checkout server. Check your connection and try again." };
     }
 
-    return { order: cart.placeOrder({ email, txnId }), onServer: false };
+    if (res.ok) return { order: await res.json() };
+
+    if (res.status === 400) {
+      const { error, field } = await res.json();
+      return { error: { message: error, field } };
+    }
+    if (res.status === 501) {
+      return { unavailable: "Checkout is still being set up on this deployment. Please check back shortly." };
+    }
+    return { unavailable: "Something went wrong starting your payment. Please try again." };
   }
 
   function paint() {
@@ -201,35 +150,38 @@
           <div class="summary-row"><span>Delivery</span><span>Email · free</span></div>
           <div class="summary-row total"><span>Total</span><span class="price">${money(total)}</span></div>
         </div>
-        ${qrPanelHTML(total)}
+        ${payPanelHTML(total)}
       </aside>
     </div>`;
 
-    root.querySelector("#confirm-form")?.addEventListener("submit", async (e) => {
+    root.querySelector("#pay-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       const form = e.target;
       const email = form.email.value.trim();
-      const txnId = form.txn.value.trim();
 
-      // Say what is wrong and where, rather than doing nothing.
       const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
-      const txnOk = txnId.length >= 4;
       document.getElementById("field-email").classList.toggle("has-error", !emailOk);
-      document.getElementById("field-txn").classList.toggle("has-error", !txnOk);
       if (!emailOk) return document.getElementById("email").focus();
-      if (!txnOk) return document.getElementById("txn").focus();
 
       const button = form.querySelector("button[type=submit]");
       button.disabled = true;
-      button.textContent = "Recording your order…";
+      button.textContent = "Starting payment…";
 
-      const { order, onServer, error } = await submitOrder({ email, txnId });
+      const { order, unavailable, error } = await startCheckout({ email });
+
+      if (unavailable) {
+        button.disabled = false;
+        button.textContent = `Pay ${money(total)} with Razorpay`;
+        root.querySelector("aside").insertAdjacentHTML("beforeend", unavailableHTML(unavailable));
+        toast(unavailable);
+        return;
+      }
 
       if (error) {
         button.disabled = false;
-        button.textContent = "I've paid — place my order";
-        const field = document.getElementById(`field-${error.field === "txnId" ? "txn" : "email"}`);
-        if (field) {
+        button.textContent = `Pay ${money(total)} with Razorpay`;
+        const field = document.getElementById("field-email");
+        if (field && error.field === "email") {
           field.classList.add("has-error");
           field.querySelector(".field-error").textContent = error.message;
         } else {
@@ -238,8 +190,20 @@
         return;
       }
 
-      root.innerHTML = confirmedHTML(order, onServer);
-      toast("Order placed");
+      // Keep a local copy so the buyer's own dashboard shows this order
+      // even before Razorpay's webhook confirms payment. order.html
+      // updates its status once delivery actually happens.
+      cart.saveOrder({
+        ref: order.ref,
+        placedAt: new Date().toISOString(),
+        email: order.email,
+        status: "created",
+        total: order.total,
+        items: order.items,
+      });
+
+      button.textContent = "Redirecting to secure payment…";
+      window.location.href = order.payUrl;
     });
   }
 

@@ -80,8 +80,12 @@
     </div>`).join("");
 
   const statusLabel = {
-    "awaiting-confirmation": "Awaiting confirmation",
+    created: "Awaiting payment",
+    paid: "Paid — delivering",
     delivered: "Delivered",
+    failed: "Payment failed",
+    refunded: "Refunded",
+    cancelled: "Cancelled",
   };
 
   document.getElementById("orders").innerHTML = orders.length

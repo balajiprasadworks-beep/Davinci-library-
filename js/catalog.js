@@ -20,13 +20,15 @@
      meta    small chips: format, length, style
      region  anatomy hotspot this note pins to (see REGIONS)
      file    delivery filename, or null while it is still manual
-     blobPath the pathname returned by tools/upload-note.mjs after
-             uploading the PDF to the private Vercel Blob store — NOT a
-             ready-to-use URL. The store is private, so the site signs
-             a fresh, expiring download link from this pathname each
-             time an order for the title is marked delivered. Omit
-             while a title ships by manual email — the delivery email
-             simply says it's coming separately.
+     r2Key   the object key returned by tools/upload-note.mjs after
+             uploading the PDF to the private Cloudflare R2 bucket —
+             NOT a ready-to-use URL. The bucket is private, so the
+             site signs a fresh, expiring download link from this key
+             automatically the instant Razorpay's webhook confirms
+             payment for an order containing this title. Omit while a
+             title has no PDF uploaded yet — the buyer's email then
+             says it's coming separately, and the order still records
+             and gets paid normally.
      status  'live'  purchasable (the default when omitted)
              'soon'  listed but NOT purchasable — shown dimmed, no
                      Add to Cart, and the server refuses to price it.

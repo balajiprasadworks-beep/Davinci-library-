@@ -17,23 +17,12 @@ export const PAYMENT = {
   currency: "INR",
   symbol: "₹",
 
-  /* --- QR PAYMENT -------------------------------------------
-     Save your payment QR image as: assets/img/payment-qr.png
-     Until it exists the checkout shows a clear placeholder instead
-     of a broken image.
-
-     upiId / accountName are kept here as a record of what the QR
-     encodes, not shown on the page — checkout deliberately displays
-     only the QR itself, no name or ID typed out beside it.
-     --------------------------------------------------------- */
-  qrImage: "assets/img/payment-qr.png",
-  upiId: "balajiprasadworks-1@oksbi",
-  accountName: "Balaji Prasad",
-
-  /* How buyers get their notes after paying. */
-  deliveryNote:
-    "After payment, send your transaction ID and email using the button below. " +
-    "Your notes are delivered to your inbox within 12 hours.",
+  /* Shown under the Pay button on the cart page. Payment itself runs
+     through Razorpay (api/_lib/razorpay.js) — see the README for the
+     one-time account setup. */
+  checkoutNote:
+    "Secure payment via Razorpay — UPI, cards, netbanking and wallets. " +
+    "Your notes unlock on this page and land in your inbox the instant payment is confirmed.",
 };
 
 export const ANATOMY = {
