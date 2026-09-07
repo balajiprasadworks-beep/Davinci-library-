@@ -10,7 +10,7 @@
    same file the page renders from is the file this imports.
    ============================================================ */
 
-import { PRODUCTS } from "../../js/catalog.js";
+import { PRODUCTS, isBuyable } from "../../js/catalog.js";
 
 const MAX_ITEMS = 40;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -69,6 +69,9 @@ export function build(body) {
   for (const id of wanted) {
     const product = PRODUCTS.find((p) => p.id === id);
     if (!product) throw new OrderError(`Unknown title: ${id}`, "ids");
+    if (!isBuyable(product)) {
+      throw new OrderError(`${product.title} is not on sale yet.`, "ids");
+    }
     items.push({ id: product.id, title: product.title, price: product.price });
   }
 

@@ -127,7 +127,7 @@
 <div id="footer-slot"></div>
 
 <script type="module">
-  import { CATEGORIES, PRODUCTS, REGIONS, byRegion, subLabel } from "./js/catalog.js";
+  import { CATEGORIES, PRODUCTS, REGIONS, byRegion, subLabel, isBuyable } from "./js/catalog.js";
   import { money, ANATOMY } from "./js/config.js";
   import * as cart from "./js/cart.js";
   import { mountShell, toast, revealAll, icons } from "./js/shell.js";
@@ -167,17 +167,19 @@
 
   function card(p) {
     const inCart = cart.has(p.id);
+    const buyable = isBuyable(p);
     return `
-    <article class="note-card reveal">
+    <article class="note-card reveal${buyable ? "" : " is-soon"}">
       <span class="note-tag">${esc(CATEGORIES[p.cat].title)} · ${esc(subLabel(p.cat, p.sub))}</span>
       <h3>${esc(p.title)}</h3>
       <p class="note-desc">${esc(p.desc)}</p>
       <div class="note-meta">${p.meta.map((m) => `<span>${esc(m)}</span>`).join("")}</div>
       <div class="note-foot">
         <span class="price">${money(p.price)}${p.was ? `<span class="was">${money(p.was)}</span>` : ""}</span>
+        ${buyable ? `
         <button class="btn btn-sm ${inCart ? "btn-ghost btn-add is-added" : "btn-primary btn-add"}" data-add="${p.id}">
           ${inCart ? icons.check + "In Cart" : "Add to Cart"}
-        </button>
+        </button>` : `<span class="note-tag" style="margin:0">In preparation</span>`}
       </div>
     </article>`;
   }

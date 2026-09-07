@@ -16,7 +16,13 @@
      was     optional strike-through price
      meta    small chips: format, length, style
      region  anatomy hotspot this note pins to (see REGIONS)
-     file    'notes/xxx.pdf' once uploaded, else null
+     file    delivery filename, or null while it is still manual
+     status  'live'  purchasable (the default when omitted)
+             'soon'  listed but NOT purchasable — shown dimmed, no
+                     Add to Cart, and the server refuses to price it.
+                     Use this for anything not finished. Selling a
+                     title that does not exist yet is how refund
+                     disputes start.
    ============================================================ */
 
 export const REGIONS = {
@@ -340,14 +346,29 @@ export const PRODUCTS = [
     meta: ["PDF", "Algorithms", "Clinical"],
     file: null,
   },
+  /* ---- AMC 1 is a section of per-subject notebooks ----
+     Each subject is its own purchasable notebook. The bundle below
+     covers all of them and stays unlisted until enough exist to
+     bundle honestly. */
+  {
+    id: "abroad-amc1-mental-health",
+    cat: "abroad", sub: "amc-1", region: "head",
+    title: "Mental Health — AMC 1",
+    desc: "Adult, child and perinatal psychiatry for the AMC Part 1 CAT. Every disorder in the same shape: the exact MCQ stem AMC uses, the buzzwords and duration thresholds that lock the answer, DSM-5-TR criteria trimmed to what is testable, and management split into initial, best and avoid.",
+    price: 199,
+    meta: ["PDF", "37 sections", "AMC stem patterns"],
+    file: null,
+    status: "soon",
+  },
   {
     id: "abroad-amc-1",
     cat: "abroad", sub: "amc-1", region: "systemic",
-    title: "AMC Part 1 — MCQ Preparation",
-    desc: "Australian guidelines where they differ from what you were taught, plus the recall-heavy topics mapped out.",
+    title: "AMC Part 1 — Complete Bundle",
+    desc: "Every AMC Part 1 subject notebook in one purchase. Listed once enough subjects are published to bundle.",
     price: 1199, was: 1699,
-    meta: ["PDF", "AU guidelines", "Recalls"],
+    meta: ["PDF", "All subjects", "Bundle"],
     file: null,
+    status: "soon",
   },
   {
     id: "abroad-amc-2",
@@ -388,6 +409,9 @@ export const PRODUCTS = [
 ];
 
 /* ---------- Query helpers ---------- */
+
+/** Anything without an explicit status is on sale. */
+export const isBuyable = (p) => (p?.status ?? "live") === "live";
 
 export const byId = (id) => PRODUCTS.find((p) => p.id === id);
 

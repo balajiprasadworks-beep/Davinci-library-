@@ -4,7 +4,7 @@
    abroad pages.
    ============================================================ */
 
-import { CATEGORIES, byCategory, subLabel } from "./catalog.js";
+import { CATEGORIES, byCategory, subLabel, isBuyable } from "./catalog.js";
 import { money } from "./config.js";
 import * as cart from "./cart.js";
 import { mountShell, toast, revealAll, icons } from "./shell.js";
@@ -16,18 +16,20 @@ const esc = (s) =>
 
 function cardHTML(p) {
   const inCart = cart.has(p.id);
+  const buyable = isBuyable(p);
   return `
-  <article class="note-card reveal" data-id="${p.id}">
+  <article class="note-card reveal${buyable ? "" : " is-soon"}" data-id="${p.id}">
     <span class="note-tag">${esc(subLabel(p.cat, p.sub))}</span>
     <h3>${esc(p.title)}</h3>
     <p class="note-desc">${esc(p.desc)}</p>
     <div class="note-meta">${p.meta.map((m) => `<span>${esc(m)}</span>`).join("")}</div>
     <div class="note-foot">
       <span class="price">${money(p.price)}${p.was ? `<span class="was">${money(p.was)}</span>` : ""}</span>
+      ${buyable ? `
       <button class="btn btn-sm ${inCart ? "btn-ghost btn-add is-added" : "btn-primary btn-add"}"
               data-add="${p.id}" aria-label="${inCart ? "Remove" : "Add"} ${esc(p.title)} ${inCart ? "from" : "to"} cart">
         ${inCart ? icons.check + "In Cart" : "Add to Cart"}
-      </button>
+      </button>` : `<span class="note-tag" style="margin:0">In preparation</span>`}
     </div>
   </article>`;
 }

@@ -92,8 +92,26 @@ Drop the PDF into `notes/`, then add one object:
   meta: ["PDF", "Diagram-led"],
   region: "limbs",             // anatomy hotspot: head chest abdomen pelvis limbs systemic
   file: "notes/anatomy.pdf",
+  status: "soon",              // omit once it is finished and on sale
 }
 ```
+
+### Not-yet-finished titles
+
+`status: "soon"` lists a title so buyers can see it coming, but it cannot be
+bought: the card renders dimmed with no Add to Cart, `cart.add()` refuses it,
+and **the server refuses to price it** even if the request is hand-crafted.
+Delete the line to put it on sale.
+
+Selling something that does not exist yet is how refund disputes start, so the
+gate is enforced in three places rather than one.
+
+### Never commit a paid PDF
+
+This repository is public and the site is served as static files. A PDF
+committed under `notes/` is downloadable by anyone who guesses the URL —
+buying it becomes optional. Delivery stays manual by email until there is a
+signed-download endpoint. Keep the files out of git.
 
 That's the whole workflow. The card, the filters, the cart and the anatomy
 hotspot all pick it up automatically.

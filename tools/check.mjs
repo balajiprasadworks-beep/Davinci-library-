@@ -127,7 +127,7 @@ if (pinOpened) await page.screenshot({ path: `${OUT}/pin.png` });
 if (three3d && !pinOpened) problems.push("3D loaded but hotspots are not clickable");
 
 /* ---------- 5. category pages ---------- */
-for (const [file, minCards] of [["mbbs.html", 19], ["internship.html", 6], ["abroad.html", 8]]) {
+for (const [file, minCards] of [["mbbs.html", 19], ["internship.html", 6], ["abroad.html", 9]]) {
   await page.goto(`${BASE}/${file}`, { waitUntil: "networkidle" });
   await page.waitForTimeout(500);
   const n = await page.locator("#grid .note-card").count();
@@ -288,6 +288,20 @@ if (!setupShown) problems.push("admin page did not explain that the API is absen
 const indexed = await page.locator('meta[name="robots"]').getAttribute("content");
 log("admin robots meta:", indexed);
 if (!indexed?.includes("noindex")) problems.push("admin page is indexable");
+
+
+/* ---------- 15. unfinished titles are visible but not purchasable ---------- */
+await page.goto(BASE + "/abroad.html?sub=amc-1", { waitUntil: "networkidle" });
+await page.waitForTimeout(500);
+const amcCards = await page.locator("#grid .note-card").count();
+const amcSoon = await page.locator("#grid .note-card.is-soon").count();
+const amcBuyable = await page.locator("#grid [data-add]").count();
+const mentalHealth = await page.locator("#grid .note-card", { hasText: "Mental Health" }).count();
+log(`AMC 1: ${amcCards} notebooks, ${amcSoon} in preparation, ${amcBuyable} addable · Mental Health listed: ${mentalHealth > 0}`);
+if (!mentalHealth) problems.push("Mental Health notebook is not listed under AMC 1");
+if (amcCards < 2) problems.push("AMC 1 should hold multiple subject notebooks");
+if (amcSoon !== amcCards) problems.push("an unfinished title is showing an Add to Cart button");
+if (amcBuyable !== 0) problems.push("an unfinished title can be added to the cart");
 
 await browser.close();
 

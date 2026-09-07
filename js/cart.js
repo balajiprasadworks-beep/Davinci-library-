@@ -3,7 +3,7 @@
    Notes are digital, so quantity is always 1 per title.
    ============================================================ */
 
-import { byId } from "./catalog.js";
+import { byId, isBuyable } from "./catalog.js";
 
 const KEY = "davinci.cart.v1";
 const ORDERS_KEY = "davinci.orders.v1";
@@ -53,7 +53,10 @@ export function has(id) {
 }
 
 export function add(id) {
-  if (!byId(id) || ids.includes(id)) return false;
+  const product = byId(id);
+  // Unfinished titles are listed so buyers can see what is coming, but
+  // they must never reach the cart.
+  if (!product || !isBuyable(product) || ids.includes(id)) return false;
   ids = [...ids, id];
   commit();
   return true;
