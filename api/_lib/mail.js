@@ -97,12 +97,14 @@ export function receiptToBuyer(order) {
 /**
  * Sent when the seller marks the order delivered.
  *
- * `resolvedItems` is order.items with a `fileUrl` merged in wherever the
- * catalogue has one (order-status.js resolves this, since order.items is
- * a frozen snapshot from checkout and never carries delivery links). A
- * title with no fileUrl yet — nothing uploaded, or an older order placed
- * before this existed — falls back to a line saying it's on its way
- * separately, so the email is never wrong, only ever less complete.
+ * `resolvedItems` is order.items with a `fileUrl` merged in wherever
+ * order-status.js could presign one (order.items itself is a frozen
+ * checkout-time snapshot and never carries a delivery link — the blob
+ * store is private, so there is no static URL to have stored anyway; a
+ * working link only exists once freshly signed). A title with no fileUrl
+ * — nothing uploaded yet, or the signing call failed — falls back to a
+ * line saying it's on its way separately, so the email is never wrong,
+ * only ever less complete.
  */
 export function deliveredToBuyer(order, resolvedItems = order.items) {
   const withLink = resolvedItems.filter((i) => i.fileUrl);
@@ -111,7 +113,8 @@ export function deliveredToBuyer(order, resolvedItems = order.items) {
   const body = [
     withLink.length
       ? `Your notes are ready to download:\n\n` +
-        withLink.map((i) => `  ${i.title}\n  ${i.fileUrl}`).join("\n\n")
+        withLink.map((i) => `  ${i.title}\n  ${i.fileUrl}`).join("\n\n") +
+        `\n\nThese links expire in 7 days — reply quoting ${order.ref} if you need a fresh one after that.`
       : null,
     withoutLink.length
       ? (withLink.length ? `\n` : ``) +
@@ -119,8 +122,8 @@ export function deliveredToBuyer(order, resolvedItems = order.items) {
         withoutLink.map((i) => `  ${i.title}`).join("\n")
       : null,
     ``,
-    `These links aren't linked from anywhere public — please don't share`,
-    `them around. If anything doesn't open, reply quoting ${order.ref}.`,
+    `Please don't share these links around — if anything doesn't open,`,
+    `reply quoting ${order.ref}.`,
   ].filter((x) => x !== null);
 
   return send({

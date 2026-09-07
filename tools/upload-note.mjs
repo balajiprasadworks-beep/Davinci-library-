@@ -1,27 +1,27 @@
 /**
- * Upload a note PDF to Vercel Blob storage and print the URL to paste
- * into js/catalog.js as that title's `fileUrl`.
+ * Upload a note PDF to Vercel Blob's private store and print the pathname
+ * to paste into js/catalog.js as that title's `blobPath`.
  *
  *   BLOB_READ_WRITE_TOKEN=... node tools/upload-note.mjs <path-to-pdf> [product-id]
  *
- * Requires Vercel Blob storage to be connected to the project first:
+ * Requires a PRIVATE Vercel Blob store connected to the project first:
  * dashboard -> Storage -> Create Database -> Blob -> Connect. That step
  * adds BLOB_READ_WRITE_TOKEN to your Vercel environment variables
  * automatically; copy the same value into your shell to run this locally
  * (dashboard -> Storage -> your store -> .env.local tab has it ready to
  * copy).
  *
- * This never touches git and never touches the deployed site directly —
- * it talks to Vercel's Blob API and hands back a URL. You paste that URL
- * into the catalogue yourself, so nothing is wired to a title without
- * you choosing to.
+ * Why private, not public: a public blob's URL works for anyone forever
+ * once they have it. A private blob has no usable bare URL at all — every
+ * download needs a signed, expiring link, generated fresh by the backend
+ * at "mark delivered" time (see api/_lib/blob.js). That fits paid content
+ * better: a leaked link stops working on its own, and a fresh one can
+ * always be re-issued without re-uploading the file.
  *
- * The upload is public in the sense that anyone holding the exact URL
- * can open it — there is no login wall. What makes that acceptable is
- * that the URL is only ever handed out by the "mark delivered" email,
- * which only fires after you have checked a payment landed. It is not
- * linked from anywhere on the site and is not guessable: Blob appends a
- * long random suffix to the filename.
+ * This never touches git and never touches the deployed site directly —
+ * it talks to Vercel's Blob API and hands back a pathname. You paste that
+ * into the catalogue yourself, so nothing is wired to a title without you
+ * choosing to.
  */
 
 import fs from "node:fs";
@@ -52,18 +52,23 @@ const { put } = await import("@vercel/blob");
 const bytes = fs.readFileSync(filePath);
 const pathname = path.basename(filePath);
 
-console.log(`Uploading ${pathname} (${(bytes.length / 1e6).toFixed(2)} MB)...`);
+console.log(`Uploading ${pathname} (${(bytes.length / 1e6).toFixed(2)} MB) to the private store...`);
 
-const { url } = await put(pathname, bytes, {
-  access: "public",
+const blob = await put(pathname, bytes, {
+  access: "private",
   contentType: "application/pdf",
   addRandomSuffix: true,
   token: process.env.BLOB_READ_WRITE_TOKEN,
 });
 
-console.log(`\nUploaded: ${url}\n`);
+console.log(`\nUploaded. Stored pathname: ${blob.pathname}\n`);
 console.log(
   productId
-    ? `Paste this into js/catalog.js as the fileUrl for "${productId}":\n\n    fileUrl: "${url}",\n`
-    : `Paste this into js/catalog.js as that title's fileUrl:\n\n    fileUrl: "${url}",\n`
+    ? `Paste this into js/catalog.js as the blobPath for "${productId}":\n\n    blobPath: "${blob.pathname}",\n`
+    : `Paste this into js/catalog.js as that title's blobPath:\n\n    blobPath: "${blob.pathname}",\n`
+);
+console.log(
+  "Note: this pathname is not a working link by itself — the site generates\n" +
+  "a fresh signed, expiring download link from it automatically each time\n" +
+  "you mark an order for this title delivered."
 );

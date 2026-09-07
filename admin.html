@@ -171,12 +171,14 @@
           <p class="eyebrow">File delivery not set up</p>
           <p class="panel-note">
             "Mark delivered" still emails the buyer, but it can't attach a
-            download link yet. Connect Vercel Blob storage
+            download link yet. Connect a PRIVATE Vercel Blob store
             (<strong>Storage → Create Database → Blob</strong> in your
             Vercel dashboard — this sets <code>BLOB_READ_WRITE_TOKEN</code>
             for you), then run <code>tools/upload-note.mjs</code> for each
-            PDF and paste the URL it prints into that title's
-            <code>fileUrl</code> in <code>js/catalog.js</code>.
+            PDF and paste the pathname it prints into that title's
+            <code>blobPath</code> in <code>js/catalog.js</code>. The site
+            signs a fresh, expiring download link from that pathname each
+            time an order is marked delivered.
           </p>
         </div>`;
     } else if (fd.titlesLinked === 0) {
@@ -184,9 +186,9 @@
         <div class="glass u-pad-sm u-mt-md">
           <p class="eyebrow">File delivery ready, nothing uploaded yet</p>
           <p class="panel-note">
-            Storage is connected but no title has a <code>fileUrl</code> —
+            Storage is connected but no title has a <code>blobPath</code> —
             run <code>tools/upload-note.mjs</code> for a PDF and paste the
-            URL it prints into <code>js/catalog.js</code>.
+            pathname it prints into <code>js/catalog.js</code>.
           </p>
         </div>`;
     } else {

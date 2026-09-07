@@ -45,9 +45,9 @@ export default async function handler(req, res) {
     fileDelivery: {
       configured: blob.isConfigured(),
       BLOB_READ_WRITE_TOKEN: env("BLOB_READ_WRITE_TOKEN"),
-      // How many catalogue titles actually have a fileUrl yet — the
+      // How many catalogue titles actually have a blobPath yet — the
       // token being set doesn't mean anything has been uploaded.
-      titlesLinked: PRODUCTS.filter((p) => p.fileUrl).length,
+      titlesLinked: PRODUCTS.filter((p) => p.blobPath).length,
       titlesTotal: PRODUCTS.length,
     },
   };

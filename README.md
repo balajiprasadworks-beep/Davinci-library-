@@ -120,7 +120,7 @@ gate is enforced in three places rather than one.
 
 This repository is public and the site is served as static files. A PDF
 committed under `notes/` is downloadable by anyone who guesses the URL —
-buying it becomes optional. Keep the files out of git; use `fileUrl` and
+buying it becomes optional. Keep the files out of git; use `blobPath` and
 **Automatic file delivery** below instead, or send them by hand.
 
 That's the whole workflow. The card, the filters, the cart and the anatomy
@@ -166,7 +166,7 @@ In Vercel, **Settings → Environment Variables**, then redeploy:
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Free Upstash Redis. Without these `/api/order` returns 501 and checkout falls back. |
 | `ADMIN_TOKEN` | Any long random string. Opens `/admin.html`. Unset means the admin API is off, not open. |
 | `RESEND_API_KEY`, `SELLER_EMAIL`, `MAIL_FROM` | So a new order emails you. Optional — a failed email never fails an order. |
-| `BLOB_READ_WRITE_TOKEN` | Lets "Mark delivered" auto-attach a download link. See **Automatic file delivery** below — Vercel sets this for you when you connect Blob storage, nothing to type in. |
+| `BLOB_READ_WRITE_TOKEN` | Lets "Mark delivered" auto-attach a download link. See **Automatic file delivery** below — Vercel sets this for you when you connect a **private** Blob store, nothing to type in. |
 
 One honest caveat on email: Resend only delivers to arbitrary addresses once
 you verify a sending domain. Until then `MAIL_FROM` must be
@@ -186,11 +186,13 @@ which name is wrong instead of guessing from a failing checkout. Or hit
 node tools/check-api.mjs
 ```
 
-36 tests, no server and no network — Redis and Resend are stubbed. Covers
-server-side pricing, that a client-supplied total is ignored, validation,
-admin auth, that marking an order delivered emails the buyer exactly once,
-and that the delivery email correctly links a title's fileUrl (or falls
-back gracefully when one isn't set yet).
+36 tests, no server and (for these paths) no real network — Redis and Resend
+are stubbed via `fetch`. Covers server-side pricing, that a client-supplied
+total is ignored, validation, admin auth, that marking an order delivered
+emails the buyer exactly once, and that the delivery email correctly links a
+title's file (or falls back gracefully when nothing presigns — a missing
+`blobPath`, or a slow/failing call to Vercel's Blob API, both leave the
+"delivered" transition and the email itself unharmed).
 
 ---
 
@@ -207,10 +209,10 @@ what works for a solo seller:
    prefilled email or WhatsApp message addressed to you.
 6. **You** check your bank — there is no payment gateway, so this step is
    never automatic — then mark the order delivered on `/admin.html`.
-7. That marks the buyer's file(s) as sent. If the title has a `fileUrl`
-   (see below), the email to the buyer includes the download link
-   automatically. If not, it says the file is coming separately, and you
-   send it yourself the way you always have.
+7. That marks the buyer's file(s) as sent. If the title has a `blobPath`
+   (see below), the email to the buyer includes a fresh, expiring download
+   link automatically. If not, it says the file is coming separately, and
+   you send it yourself the way you always have.
 
 With the backend on, step 5 happens automatically and the buyer has nothing to
 send you. Without it, they have to email the reference themselves.
@@ -220,7 +222,7 @@ the dashboard. **You** are the system of record — check your bank, then delive
 
 ### Automatic file delivery
 
-Once a title has a `fileUrl`, step 7 needs nothing from you beyond clicking
+Once a title has a `blobPath`, step 7 needs nothing from you beyond clicking
 "Mark delivered" — no attaching a PDF, no separate email.
 
 **Why this isn't Google Drive**: the backend has no Google credentials, and
@@ -229,11 +231,22 @@ isn't the git repo — see "Never commit a paid PDF" above; a public repo has
 no private folder. It's [Vercel Blob](https://vercel.com/docs/storage/vercel-blob)
 instead — one token, already scoped to this project, no OAuth flow.
 
+**Private store, not public.** A public Blob store hands out a bare URL that
+works forever for anyone who has it — fine for images, not for something
+someone paid ₹199 for. This project uses a **private** store instead: a bare
+blob URL there needs an `Authorization` header a buyer's browser can't send,
+so there is no permanent link to leak in the first place. Instead, the
+backend generates a **presigned URL** — a link carrying its own signature
+and a 7-day expiry — fresh, at the moment an order is marked delivered. A
+leaked link stops working on its own, and a fresh one can always be
+reissued from the same file without re-uploading anything.
+
 **One-time setup:**
 
 1. Vercel dashboard → your project → **Storage → Create Database → Blob →
-   Connect.** This adds `BLOB_READ_WRITE_TOKEN` to your environment
-   variables itself — nothing to copy by hand into Vercel.
+   Connect**, choosing a **Private** store. This adds `BLOB_READ_WRITE_TOKEN`
+   to your environment variables itself — nothing to copy by hand into
+   Vercel.
 2. To run the upload script locally, copy that same token from **Storage →
    your Blob store → `.env.local` tab** into your shell.
 
@@ -243,27 +256,26 @@ instead — one token, already scoped to this project, no OAuth flow.
 BLOB_READ_WRITE_TOKEN=... node tools/upload-note.mjs "notebook.pdf" abroad-amc1-mental-health
 ```
 
-It prints a URL. Paste it into that title's entry in `js/catalog.js`:
+It prints a **pathname** — not a working link by itself, since the store is
+private. Paste it into that title's entry in `js/catalog.js`:
 
 ```js
-fileUrl: "https://xxxxx.public.blob.vercel-storage.com/notebook-abc123.pdf",
+blobPath: "notebook-abc123.pdf",
 ```
 
-Push. The next "Mark delivered" for that title auto-attaches the link — for
-every order of it, past or future, since the link is resolved from the
+Push. The next "Mark delivered" for that title signs a fresh link on the
+spot — for every order of it, past or future, since it's resolved from the
 catalogue at delivery time, not stored with the order.
 
-**On the security tradeoff**: the URL has no login wall — anyone holding the
-exact link can open it. What makes that acceptable is that it is only ever
-handed out by the delivery email, which only fires after *you* verify a
-payment, and it isn't linked from anywhere on the site. It isn't guessable
-either — Blob appends a long random suffix. If a link ever leaks, delete
-that blob and upload again under a new one; the old link stops working and
-you update `fileUrl` to match.
+**If Vercel's Blob API is slow or unreachable** when a link is being signed,
+that one title's link is skipped rather than left hanging — the order still
+gets marked delivered and the buyer still gets emailed, just with that title
+listed as "sending separately." Nothing about a shaky network connection can
+block a sale from closing out.
 
 **Checking it's wired up**: `/admin.html` shows a "File delivery" status line
 whenever the order book loads, and `/api/health` reports `fileDelivery` —
-whether the token is set and how many titles have a `fileUrl`, as booleans
+whether the token is set and how many titles have a `blobPath`, as booleans
 and counts only, never the token or a URL.
 
 ---
