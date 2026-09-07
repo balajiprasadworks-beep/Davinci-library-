@@ -300,8 +300,26 @@ const mentalHealth = await page.locator("#grid .note-card", { hasText: "Mental H
 log(`AMC 1: ${amcCards} notebooks, ${amcSoon} in preparation, ${amcBuyable} addable · Mental Health listed: ${mentalHealth > 0}`);
 if (!mentalHealth) problems.push("Mental Health notebook is not listed under AMC 1");
 if (amcCards < 2) problems.push("AMC 1 should hold multiple subject notebooks");
-if (amcSoon !== amcCards) problems.push("an unfinished title is showing an Add to Cart button");
-if (amcBuyable !== 0) problems.push("an unfinished title can be added to the cart");
+
+// Mental Health is on sale; the bundle is listed but must not be buyable
+// while it would contain a single notebook.
+const mhAddable = await page.locator("#grid .note-card", { hasText: "Mental Health" })
+  .locator("[data-add]").count();
+if (!mhAddable) problems.push("Mental Health is on sale but has no Add to Cart");
+if (amcSoon !== 1) problems.push(`expected only the bundle to be unlisted, saw ${amcSoon}`);
+
+// Buy it, and confirm the price the cart shows is the catalogue price.
+await page.locator("#grid .note-card", { hasText: "Mental Health" }).locator("[data-add]").click();
+await page.waitForTimeout(300);
+await page.goto(BASE + "/cart.html", { waitUntil: "networkidle" });
+await page.waitForTimeout(600);
+const mhRow = page.locator(".cart-line", { hasText: "Mental Health" });
+const mhLine = await mhRow.count();
+// Assert the line price, not the total — earlier steps leave items in the cart.
+const mhPrice = mhLine ? (await mhRow.locator(".price").textContent()).trim() : "";
+log("Mental Health in cart:", mhLine > 0, "· line price:", mhPrice);
+if (!mhLine) problems.push("Mental Health could not be added to the cart");
+if (!mhPrice.includes("199")) problems.push(`Mental Health should price at Rs199, showed ${mhPrice}`);
 
 await browser.close();
 

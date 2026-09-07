@@ -356,9 +356,8 @@ export const PRODUCTS = [
     title: "Mental Health — AMC 1",
     desc: "Adult, child and perinatal psychiatry for the AMC Part 1 CAT. Every disorder in the same shape: the exact MCQ stem AMC uses, the buzzwords and duration thresholds that lock the answer, DSM-5-TR criteria trimmed to what is testable, and management split into initial, best and avoid.",
     price: 199,
-    meta: ["PDF", "37 sections", "AMC stem patterns"],
-    file: null,
-    status: "soon",
+    meta: ["PDF", "AMC stem patterns", "DSM-5-TR"],
+    file: "DaVinci Medical Library's AMC 1 - Mental Health.pdf",
   },
   {
     id: "abroad-amc-1",
