@@ -127,7 +127,7 @@
 <div id="footer-slot"></div>
 
 <script type="module">
-  import { CATEGORIES, PRODUCTS, REGIONS, byRegion, subLabel, isBuyable } from "./js/catalog.js";
+  import { CATEGORIES, PRODUCTS, REGIONS, byRegion, byNewest, subLabel, isBuyable } from "./js/catalog.js";
   import { money, ANATOMY } from "./js/config.js";
   import * as cart from "./js/cart.js";
   import { mountShell, toast, revealAll, icons } from "./js/shell.js";
@@ -185,7 +185,10 @@
   }
 
   function paint() {
-    const list = region === "all" ? PRODUCTS : byRegion(region);
+    // "Everything" is newest-first, so a freshly added title is the first
+    // thing a returning visitor sees. A region filter stays in catalogue
+    // order — recency is not the point once you've narrowed to one system.
+    const list = region === "all" ? byNewest(PRODUCTS) : byRegion(region);
     grid.innerHTML = list.map(card).join("");
     revealAll("#pinned-grid .reveal");
 

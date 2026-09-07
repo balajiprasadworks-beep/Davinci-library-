@@ -81,6 +81,14 @@ const cards = await page.locator("#pinned-grid .note-card").count();
 log("homepage note cards:", cards);
 if (cards < 30) problems.push(`expected full catalogue on homepage, saw ${cards}`);
 
+// "Everything" must be newest-first, not catalogue order — the whole point
+// is that a freshly added title surfaces at the top without re-sorting.
+const firstCardTitle = (await page.locator("#pinned-grid .note-card h3").first().textContent()).trim();
+log("first card in Everything view:", firstCardTitle);
+if (!/Mental Health/.test(firstCardTitle)) {
+  problems.push(`Everything should lead with the newest title, but the first card was "${firstCardTitle}"`);
+}
+
 const portals = await page.locator("#portals .portal").count();
 log("category portals:", portals);
 if (portals !== 3) problems.push(`expected 3 portals, saw ${portals}`);
@@ -308,7 +316,17 @@ const mhAddable = await page.locator("#grid .note-card", { hasText: "Mental Heal
 if (!mhAddable) problems.push("Mental Health is on sale but has no Add to Cart");
 if (amcSoon !== 1) problems.push(`expected only the bundle to be unlisted, saw ${amcSoon}`);
 
-// Buy it, and confirm the price the cart shows is the catalogue price.
+// Earlier steps in this suite add/remove items from the cart using
+// position-based selectors (".first()", ".nth(3)"). Now that Mental Health
+// sorts to the front of the homepage's "Everything" view, one of those
+// earlier clicks can land on it and leave it sitting in the cart — so an
+// "Add to Cart" click here would toggle it back OFF. Start from a clean
+// cart so this assertion doesn't depend on what earlier steps happened to
+// touch.
+await page.evaluate(() => localStorage.removeItem("davinci.cart.v1"));
+await page.reload({ waitUntil: "networkidle" });
+await page.waitForTimeout(400);
+
 await page.locator("#grid .note-card", { hasText: "Mental Health" }).locator("[data-add]").click();
 await page.waitForTimeout(300);
 await page.goto(BASE + "/cart.html", { waitUntil: "networkidle" });

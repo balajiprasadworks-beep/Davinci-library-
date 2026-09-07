@@ -93,8 +93,18 @@ Drop the PDF into `notes/`, then add one object:
   region: "limbs",             // anatomy hotspot: head chest abdomen pelvis limbs systemic
   file: "notes/anatomy.pdf",
   status: "soon",              // omit once it is finished and on sale
+  addedAt: "2026-09-08",       // today's date — see below
 }
 ```
+
+### New titles surface first automatically
+
+The homepage's "Everything" view sorts by `addedAt`, newest first. Use today's
+date on every new entry and it appears at the top the moment you push —
+no reordering the array, no separate "featured" flag to remember.
+
+Filtering by region stays in catalogue order; recency only matters on the
+unfiltered view, where a returning visitor is scanning for what's new.
 
 ### Not-yet-finished titles
 
