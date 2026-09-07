@@ -101,6 +101,53 @@ const headTitle = await page.locator("#pinned-title").textContent();
 log("head region:", headCards, "cards ·", headTitle);
 if (headCards === 0 || headCards >= cards) problems.push("region filter did not narrow the grid");
 
+/* ---------- 2b. library search + sort toolbar ---------- */
+await page.locator('[data-region="all"]').click();
+await page.waitForTimeout(300);
+
+await page.fill("#lib-search", "Mental Health");
+await page.waitForTimeout(300);
+const searchTitles = await page.locator("#pinned-grid .note-card h3").allTextContents();
+log("search 'Mental Health' results:", searchTitles.length);
+if (searchTitles.length !== 1 || !/Mental Health/.test(searchTitles[0])) {
+  problems.push(`search should isolate the one Mental Health title, got ${JSON.stringify(searchTitles)}`);
+}
+await page.fill("#lib-search", "");
+await page.waitForTimeout(300);
+
+// Read only the leading text node of .price — a strike-through "was" price
+// is a nested <span> and must not get glued onto the number being parsed.
+const cardPrices = () =>
+  page.$$eval("#pinned-grid .note-card .price", (els) =>
+    els.map((el) => Number(el.childNodes[0].textContent.replace(/[^\d]/g, "")))
+  );
+
+await page.selectOption("#lib-sort", "price-asc");
+await page.waitForTimeout(300);
+const ascPrices = await cardPrices();
+log("sort price-asc: first", ascPrices[0], "last", ascPrices[ascPrices.length - 1]);
+if (!ascPrices.every((p, i) => i === 0 || p >= ascPrices[i - 1])) {
+  problems.push("Price: Low to High did not sort ascending");
+}
+
+await page.selectOption("#lib-sort", "price-desc");
+await page.waitForTimeout(300);
+const descPrices = await cardPrices();
+if (!descPrices.every((p, i) => i === 0 || p <= descPrices[i - 1])) {
+  problems.push("Price: High to Low did not sort descending");
+}
+
+await page.selectOption("#lib-sort", "default");
+await page.waitForTimeout(300);
+const defaultFirst = (await page.locator("#pinned-grid .note-card h3").first().textContent()).trim();
+if (/Mental Health/.test(defaultFirst)) {
+  problems.push(`Default order should not lead with the newest title, but got "${defaultFirst}"`);
+}
+
+// Back to the baseline the rest of the suite assumes (newest-first, no filter).
+await page.selectOption("#lib-sort", "newest");
+await page.waitForTimeout(300);
+
 /* ---------- 3. add to cart ---------- */
 await page.locator('[data-region="all"]').click();
 await page.waitForTimeout(300);

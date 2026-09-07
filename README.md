@@ -99,12 +99,15 @@ Drop the PDF into `notes/`, then add one object:
 
 ### New titles surface first automatically
 
-The homepage's "Everything" view sorts by `addedAt`, newest first. Use today's
-date on every new entry and it appears at the top the moment you push —
-no reordering the array, no separate "featured" flag to remember.
+The homepage's whole-library grid defaults to newest first, by `addedAt`. Use
+today's date on every new entry and it appears at the top the moment you
+push — no reordering the array, no separate "featured" flag to remember.
 
-Filtering by region stays in catalogue order; recency only matters on the
-unfiltered view, where a returning visitor is scanning for what's new.
+A sort dropdown next to the region tabs lets a visitor switch that: **Newly
+added** (the default), **Default order** (catalogue order — untouched by
+`addedAt`), **Price: Low to High**, **Price: High to Low**. A search box
+beside it filters by title, description, category and sub-category as you
+type. Both apply on top of whichever region tab is active.
 
 ### Not-yet-finished titles
 

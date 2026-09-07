@@ -80,6 +80,18 @@
       </p>
     </div>
     <div class="subnav" id="region-nav" role="tablist" aria-label="Anatomical region"></div>
+    <div class="lib-toolbar">
+      <div class="lib-search">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><circle cx="9" cy="9" r="6.5" stroke-width="1.6"/><path d="m18 18-4-4" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <input type="search" id="lib-search" placeholder="Search notes by title…" aria-label="Search notes">
+      </div>
+      <select class="lib-sort" id="lib-sort" aria-label="Sort notes">
+        <option value="newest">Newly added</option>
+        <option value="default">Default order</option>
+        <option value="price-asc">Price: Low to High</option>
+        <option value="price-desc">Price: High to Low</option>
+      </select>
+    </div>
     <div class="card-grid" id="pinned-grid"></div>
   </section>
 
@@ -159,11 +171,29 @@
   const lede = document.getElementById("pinned-lede");
 
   let region = "all";
+  let sort = "newest";
+  let query = "";
+
+  const searchInput = document.getElementById("lib-search");
+  const sortSelect = document.getElementById("lib-sort");
+  sortSelect.value = sort;
 
   regionNav.innerHTML = [["all", "Everything"], ...Object.entries(REGIONS)]
     .map(([id, label]) =>
       `<button role="tab" data-region="${id}" aria-selected="${id === "all"}">${esc(label)}</button>`)
     .join("");
+
+  const SORTERS = {
+    newest: byNewest,
+    default: (list) => list,
+    "price-asc": (list) => [...list].sort((a, b) => a.price - b.price),
+    "price-desc": (list) => [...list].sort((a, b) => b.price - a.price),
+  };
+
+  function matchesQuery(p, q) {
+    const haystack = `${p.title} ${p.desc} ${CATEGORIES[p.cat].title} ${subLabel(p.cat, p.sub)}`.toLowerCase();
+    return haystack.includes(q);
+  }
 
   function card(p) {
     const inCart = cart.has(p.id);
@@ -185,11 +215,14 @@
   }
 
   function paint() {
-    // "Everything" is newest-first, so a freshly added title is the first
-    // thing a returning visitor sees. A region filter stays in catalogue
-    // order — recency is not the point once you've narrowed to one system.
-    const list = region === "all" ? byNewest(PRODUCTS) : byRegion(region);
-    grid.innerHTML = list.map(card).join("");
+    const base = region === "all" ? PRODUCTS : byRegion(region);
+    const q = query.trim().toLowerCase();
+    const filtered = q ? base.filter((p) => matchesQuery(p, q)) : base;
+    const list = SORTERS[sort](filtered);
+
+    grid.innerHTML = list.length
+      ? list.map(card).join("")
+      : `<p class="empty-state">No notes match "${esc(query.trim())}".</p>`;
     revealAll("#pinned-grid .reveal");
 
     if (region === "all") {
@@ -225,6 +258,16 @@
     toast(added ? "Added to cart" : "Removed from cart");
     btn.className = `btn btn-sm ${added ? "btn-ghost btn-add is-added" : "btn-primary btn-add"}`;
     btn.innerHTML = added ? icons.check + "In Cart" : "Add to Cart";
+  });
+
+  searchInput.addEventListener("input", () => {
+    query = searchInput.value;
+    paint();
+  });
+
+  sortSelect.addEventListener("change", () => {
+    sort = sortSelect.value;
+    paint();
   });
 
   paint();
