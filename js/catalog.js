@@ -399,6 +399,16 @@ export const PRODUCTS = [
     file: "DaVinci Medical Library's AMC 1 - Mental Health.pdf",
   },
   {
+    id: "abroad-amc1-gastroenterology",
+    addedAt: "2026-09-07",
+    cat: "abroad", sub: "amc-1", region: "abdomen",
+    title: "Gastroenterology — AMC 1",
+    desc: "Gastroenterology and GI surgery for the AMC Part 1 CAT. Every condition in the same shape: the exact MCQ stem AMC uses, the buzzwords and killer discriminators that lock the diagnosis, investigations tiered from first test to gold standard, and the AMC traps examiners set for the obvious wrong answer.",
+    price: 199,
+    meta: ["PDF", "AMC stem patterns", "GI Surgery"],
+    file: "DaVinci Medical Library's AMC 1 - Gastroenterology.pdf",
+  },
+  {
     id: "abroad-amc-1",
     addedAt: "2026-09-07",
     cat: "abroad", sub: "amc-1", region: "systemic",
