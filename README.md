@@ -3,8 +3,9 @@
 A 3D interactive storefront for medical notes — MBBS year-wise, internship
 practical guides, and preparation for exams abroad.
 
-Static pages with no build step and no framework, plus three optional
-serverless functions that record orders. Open it, edit it, push it.
+Static pages with no build step and no framework, plus a small set of
+serverless functions in `/api` that take payment, record orders and
+deliver files automatically. Open it, edit it, push it.
 
 ---
 
@@ -26,7 +27,8 @@ python3 -m http.server 8080
 | `mbbs.html` | MBBS Level — 1st to 4th year |
 | `internship.html` | Internship practical guides |
 | `abroad.html` | NEET PG, USMLE, AMC, PLAB, DHA, MCAT |
-| `cart.html` | Cart and QR checkout |
+| `cart.html` | Cart and Razorpay checkout |
+| `order.html` | Post-payment status — polls for delivery, shows the download button |
 | `dashboard.html` | Orders, stats, quick links |
 | `profile.html` | Buyer details, stored locally |
 | `legal.html` | Terms of sale, refunds, privacy, medical disclaimer |
@@ -40,32 +42,22 @@ the top row, **View Cart** (with a live count) and **Profile** below it.
 
 ## The three things you will actually edit
 
-### 1. Your payment QR — `js/config.js` + `assets/img/`
+### 1. Your payment, database and file storage accounts
 
-**Already configured** — `balajiprasadworks-1@oksbi`, Balaji Prasad. Change it
-only if you move to a different UPI account.
-
-To swap in a new one, hand the tool a screenshot from GPay/PhonePe:
-
-```bash
-pip install pillow numpy opencv-python-headless
-python3 tools/prep-qr.py ~/Downloads/new-qr.png
-```
-
-It crops to the symbol, rebuilds the quiet zone on white, and **refuses to
-write the file if the crop changes what the code decodes to** — a QR that no
-longer scans looks perfectly fine to the eye. Then update `js/config.js`:
+There is no QR code any more — payment runs through **Razorpay**, orders are
+recorded in **Neon**, and files are stored in **Cloudflare R2**. All three
+need a one-time account setup before checkout works at all; see
+**The backend** below for exactly what to create and which environment
+variables to set. `js/config.js` itself only holds the buyer-facing checkout
+copy now:
 
 ```js
 export const PAYMENT = {
-  upiId: "yourname@okhdfcbank",
-  accountName: "Your Name",
-  ...
+  currency: "INR",
+  symbol: "₹",
+  checkoutNote: "Shown under the Pay button on the cart page.",
 };
 ```
-
-If the image is ever missing, checkout shows a labelled placeholder rather than
-a broken image, and `tools/check.mjs` fails.
 
 ### 2. Your contact routing — `js/config.js`
 
@@ -78,7 +70,8 @@ export const SITE = {
 
 ### 3. Adding a note — `js/catalog.js`
 
-Drop the PDF into `notes/`, then add one object:
+Add one object — leave `status: "soon"` and `r2Key` off until the PDF is
+actually uploaded (see **Automatic file delivery** below):
 
 ```js
 {
@@ -91,8 +84,8 @@ Drop the PDF into `notes/`, then add one object:
   was: 599,                    // optional strike-through
   meta: ["PDF", "Diagram-led"],
   region: "limbs",             // anatomy hotspot: head chest abdomen pelvis limbs systemic
-  file: "notes/anatomy.pdf",
-  status: "soon",              // omit once it is finished and on sale
+  file: "General & Systemic Anatomy.pdf",  // display filename only, not a path
+  status: "soon",              // omit once a PDF is uploaded and it's on sale
   addedAt: "2026-09-08",       // today's date — see below
 }
 ```
@@ -122,9 +115,9 @@ gate is enforced in three places rather than one.
 ### Never commit a paid PDF
 
 This repository is public and the site is served as static files. A PDF
-committed under `notes/` is downloadable by anyone who guesses the URL —
-buying it becomes optional. Keep the files out of git; use `blobPath` and
-**Automatic file delivery** below instead, or send them by hand.
+committed to git is downloadable by anyone who guesses the URL — buying it
+becomes optional. Keep the files out of git entirely; use `r2Key` and
+**Automatic file delivery** below instead.
 
 That's the whole workflow. The card, the filters, the cart and the anatomy
 hotspot all pick it up automatically.
@@ -133,43 +126,69 @@ hotspot all pick it up automatically.
 
 ## The backend
 
-The site is static, but `/api` holds three Vercel serverless functions that
-record orders. **All of it is optional** — with no environment variables set,
-checkout falls back to the original browser-only flow and nothing breaks. The
-test suite covers both paths.
+`/api` holds the serverless functions that take payment, record orders and
+deliver files — all of it required for checkout to work at all, unlike the
+old manual flow this replaced. There is no local-only fallback: if the
+backend isn't configured, the cart page says so plainly rather than faking a
+sale (see **How the money flows** below).
 
 | Route | Who | What |
 | --- | --- | --- |
-| `POST /api/order` | buyer | Prices the order from the catalogue, stores it, emails you and the buyer |
+| `POST /api/create-order` | buyer | Prices the cart from the catalogue, records it, opens a Razorpay Payment Link |
+| `POST /api/razorpay-webhook` | Razorpay | Confirms payment (signature-verified) and triggers delivery — the only place "paid" is decided |
+| `GET /api/order-lookup?ref=` | buyer | Polled by `order.html` after a redirect back from Razorpay, to show the download button on the page |
 | `GET /api/orders` | you | The order book behind `ADMIN_TOKEN` |
-| `POST /api/order-status` | you | Mark delivered / refunded / cancelled |
+| `POST /api/order-status` | you | Manual override for support cases: refund / cancel / resend — not the routine path |
 | `GET /api/health` | anyone | Which variables landed. Booleans only, never values. With an admin token it also round-trips the database. |
 
-`/admin.html` is the seller UI over those two admin routes. It is `noindex`
-and unlinked from the site.
+`/admin.html` is the seller UI over the two admin routes. It is `noindex` and
+unlinked from the site.
 
-### Why it exists
+### Why it's fully automatic
 
-Without it you only learn about a sale if the buyer remembers to email you the
-reference. When they forget, money arrives in your account with no way to tell
-who paid or what to send. The API records the order the moment they check out.
+The old flow needed you to check your bank and click "mark delivered" for
+every single sale — miss one and a paying buyer waits. This one has no such
+step: Razorpay's webhook is the one place that decides a payment happened,
+and it triggers delivery itself. `/admin.html` exists for visibility and the
+rare refund or resend, not for routine order handling.
 
 ### The prices are server-side
 
 `api/_lib/order.js` imports `js/catalog.js` — the same file the page renders
-from — and sums the total itself. The browser sends product **ids only**. A
-tampered client cannot invent a ₹1 order.
+from — and sums the total itself. The browser sends product **ids only**.
+`api/create-order.js` charges Razorpay exactly that amount; a tampered client
+cannot invent a ₹1 order.
 
 ### Turning it on
 
-In Vercel, **Settings → Environment Variables**, then redeploy:
+Three services, each with a one-time setup, then a handful of environment
+variables in Vercel (**Settings → Environment Variables**, then redeploy):
+
+**1. Razorpay** — [dashboard.razorpay.com](https://dashboard.razorpay.com):
+- Settings → API Keys → generate a key pair (start in **Test Mode**) →
+  `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`.
+- Settings → Webhooks → Add New Webhook → URL `https://yourdomain/api/razorpay-webhook`
+  → set a secret (any string you choose) → `RAZORPAY_WEBHOOK_SECRET` (same
+  value) → subscribe to `payment_link.paid` at minimum.
+
+**2. Neon** — [neon.tech](https://neon.tech), create a project, then run
+`db/schema.sql` once (Neon's SQL editor, or `psql "$DATABASE_URL" -f
+db/schema.sql`) → copy the connection string as `DATABASE_URL`.
+
+**3. Cloudflare R2** — Cloudflare dashboard → R2 → create a **private**
+bucket → Manage API Tokens → create a token scoped to it → `R2_ACCOUNT_ID`
+(R2 Overview page), `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
+See **Automatic file delivery** below for uploading the actual PDFs once this
+is done.
 
 | Variable | Why |
 | --- | --- |
-| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Free Upstash Redis. Without these `/api/order` returns 501 and checkout falls back. |
+| `DATABASE_URL` | Neon. Without it, checkout (and `/api/orders`) return 501. |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | Creates the Payment Link at checkout. Without these, checkout returns 501. |
+| `RAZORPAY_WEBHOOK_SECRET` | Verifies the webhook is really from Razorpay. Without it, delivery never triggers even if payment succeeds. |
 | `ADMIN_TOKEN` | Any long random string. Opens `/admin.html`. Unset means the admin API is off, not open. |
-| `RESEND_API_KEY`, `SELLER_EMAIL`, `MAIL_FROM` | So a new order emails you. Optional — a failed email never fails an order. |
-| `BLOB_READ_WRITE_TOKEN` | Lets "Mark delivered" auto-attach a download link. See **Automatic file delivery** below — Vercel sets this for you when you connect a **private** Blob store, nothing to type in. |
+| `RESEND_API_KEY`, `SELLER_EMAIL`, `MAIL_FROM` | So orders email you and the buyer. Optional in the sense that a failed send never blocks a sale — but with no `RESEND_API_KEY`, a buyer gets no receipt at all beyond the download button shown on `order.html` itself. |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | Lets a confirmed payment auto-attach a download link. See **Automatic file delivery** below. |
 
 One honest caveat on email: Resend only delivers to arbitrary addresses once
 you verify a sending domain. Until then `MAIL_FROM` must be
@@ -183,103 +202,103 @@ prints a per-variable checklist and a live database round-trip, so you can see
 which name is wrong instead of guessing from a failing checkout. Or hit
 `/api/health` directly.
 
+**Before switching Razorpay from Test Mode to live keys**, run one real
+end-to-end order in test mode: add a title to the cart, pay with a
+[Razorpay test card or test UPI VPA](https://razorpay.com/docs/payments/payments/test-card-upi-details/),
+and confirm the webhook fires, the order reaches `delivered` in `/admin.html`,
+and the email/download link actually arrives.
+
 ### Checks
 
 ```bash
 node tools/check-api.mjs
 ```
 
-36 tests, no server and (for these paths) no real network — Redis and Resend
-are stubbed via `fetch`. Covers server-side pricing, that a client-supplied
-total is ignored, validation, admin auth, that marking an order delivered
-emails the buyer exactly once, and that the delivery email correctly links a
-title's file (or falls back gracefully when nothing presigns — a missing
-`blobPath`, or a slow/failing call to Vercel's Blob API, both leave the
-"delivered" transition and the email itself unharmed).
+36 tests, no server and no live credentials — Resend is stubbed via `fetch`,
+and `order.build()`'s pricing/validation and the webhook's signature
+verification are pure functions tested directly. Neon and R2 use their own
+SDKs rather than raw `fetch`, so they are not stubbed; instead these checks
+prove that an unconfigured deployment fails with a clear 501 rather than
+crashing, and — the one that matters most — that the webhook verifies its
+signature **before** touching the database at all, so a forged request never
+reaches Neon or R2 no matter what is or isn't configured.
 
 ---
 
 ## How the money flows
 
-There is still no payment gateway. The flow is deliberately manual, which is
-what works for a solo seller:
+Fully automatic, with no seller interaction:
 
-1. Buyer adds notes to the cart.
-2. Checkout shows your QR and the exact total.
-3. Buyer pays with any UPI app.
-4. Buyer enters their email and the transaction ID.
-5. The site records the order, gives them a reference (`DV…`), and opens a
-   prefilled email or WhatsApp message addressed to you.
-6. **You** check your bank — there is no payment gateway, so this step is
-   never automatic — then mark the order delivered on `/admin.html`.
-7. That marks the buyer's file(s) as sent. If the title has a `blobPath`
-   (see below), the email to the buyer includes a fresh, expiring download
-   link automatically. If not, it says the file is coming separately, and
-   you send it yourself the way you always have.
+1. Buyer adds notes to the cart, enters their email, clicks Pay.
+2. `api/create-order.js` prices the cart from the catalogue and opens a
+   **Razorpay Payment Link**; the buyer's browser is sent straight to it.
+3. Buyer pays on Razorpay's own page — UPI, card, netbanking or wallet.
+4. Razorpay redirects the buyer back to `order.html`, **and**, independently
+   and more reliably, calls `api/razorpay-webhook.js` directly. The webhook
+   is the only thing that decides a payment actually happened: its signature
+   is verified against `RAZORPAY_WEBHOOK_SECRET`, and nothing the buyer's
+   browser reports is ever trusted on its own.
+5. Once verified, the order moves to `paid` in Neon, a fresh expiring
+   download link is presigned from R2 for each title, and the buyer is
+   emailed automatically.
+6. `order.html` polls for that same result and shows the download button
+   directly on the page — the buyer doesn't have to wait on email at all.
 
-With the backend on, step 5 happens automatically and the buyer has nothing to
-send you. Without it, they have to email the reference themselves.
-
-Orders are stored in the buyer's own browser so they can see their history on
-the dashboard. **You** are the system of record — check your bank, then deliver.
+Nobody checks a bank account or clicks "mark delivered." `/admin.html` is
+for visibility and the rare refund, cancellation or resend — see **Turning
+it on** above for what needs to be configured before any of this can run.
 
 ### Automatic file delivery
 
-Once a title has a `blobPath`, step 7 needs nothing from you beyond clicking
-"Mark delivered" — no attaching a PDF, no separate email.
+Once a title has an `r2Key`, step 5 above finds the file with nothing more
+from you — no attaching a PDF, no separate email.
 
-**Why this isn't Google Drive**: the backend has no Google credentials, and
-wiring OAuth just to fetch one file is a real project of its own. It also
-isn't the git repo — see "Never commit a paid PDF" above; a public repo has
-no private folder. It's [Vercel Blob](https://vercel.com/docs/storage/vercel-blob)
-instead — one token, already scoped to this project, no OAuth flow.
+**Why R2, not Google Drive or the git repo**: the backend has no Google
+credentials, and wiring OAuth just to fetch one file is a project of its
+own. It also isn't the git repo — see "Never commit a paid PDF" above; a
+public repo has no private folder. [Cloudflare R2](https://developers.cloudflare.com/r2/)
+is S3-compatible object storage with a generous free tier and no egress fees.
 
-**Private store, not public.** A public Blob store hands out a bare URL that
+**Private bucket, not public.** A public bucket hands out a bare URL that
 works forever for anyone who has it — fine for images, not for something
-someone paid ₹199 for. This project uses a **private** store instead: a bare
-blob URL there needs an `Authorization` header a buyer's browser can't send,
+someone paid ₹199 for. This project uses a **private** bucket instead: a bare
+object URL there needs a signature no buyer's browser can produce on its own,
 so there is no permanent link to leak in the first place. Instead, the
 backend generates a **presigned URL** — a link carrying its own signature
-and a 7-day expiry — fresh, at the moment an order is marked delivered. A
-leaked link stops working on its own, and a fresh one can always be
-reissued from the same file without re-uploading anything.
+and up to a 7-day expiry (the hard ceiling for this kind of link, not a
+choice this project made) — fresh, every time the buyer's payment is
+confirmed or `order.html`/`order-lookup` is checked. A leaked link stops
+working on its own, and a fresh one can always be reissued from the same
+file without re-uploading anything.
 
-**One-time setup:**
-
-1. Vercel dashboard → your project → **Storage → Create Database → Blob →
-   Connect**, choosing a **Private** store. This adds `BLOB_READ_WRITE_TOKEN`
-   to your environment variables itself — nothing to copy by hand into
-   Vercel.
-2. To run the upload script locally, copy that same token from **Storage →
-   your Blob store → `.env.local` tab** into your shell.
-
-**Per note, from then on:**
+**Per note:**
 
 ```bash
-BLOB_READ_WRITE_TOKEN=... node tools/upload-note.mjs "notebook.pdf" abroad-amc1-mental-health
+R2_ACCOUNT_ID=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_BUCKET=... \
+  node tools/upload-note.mjs "notebook.pdf" abroad-amc1-mental-health
 ```
 
-It prints a **pathname** — not a working link by itself, since the store is
-private. Paste it into that title's entry in `js/catalog.js`:
+It prints an **object key** — not a working link by itself, since the bucket
+is private. Paste it into that title's entry in `js/catalog.js`:
 
 ```js
-blobPath: "notebook-abc123.pdf",
+r2Key: "notes/abc123-notebook.pdf",
 ```
 
-Push. The next "Mark delivered" for that title signs a fresh link on the
+Push. The next confirmed payment for that title signs a fresh link on the
 spot — for every order of it, past or future, since it's resolved from the
 catalogue at delivery time, not stored with the order.
 
-**If Vercel's Blob API is slow or unreachable** when a link is being signed,
-that one title's link is skipped rather than left hanging — the order still
-gets marked delivered and the buyer still gets emailed, just with that title
+**If R2 is slow or unreachable** when a link is being signed, that one
+title's link is skipped rather than left hanging — the order still gets
+marked delivered and the buyer still gets emailed, just with that title
 listed as "sending separately." Nothing about a shaky network connection can
 block a sale from closing out.
 
 **Checking it's wired up**: `/admin.html` shows a "File delivery" status line
 whenever the order book loads, and `/api/health` reports `fileDelivery` —
-whether the token is set and how many titles have a `blobPath`, as booleans
-and counts only, never the token or a URL.
+whether R2 is configured and how many titles have an `r2Key`, as booleans
+and counts only, never the credentials or a URL.
 
 ---
 
@@ -321,17 +340,22 @@ pip install trimesh fast-simplification numpy scipy
 python3 tools/obj-to-glb.py
 ```
 
-## No third-party requests
+## No third-party requests — while browsing
 
 Three.js, GSAP and the three fonts all live in `vendor/` and are served from
 this domain. Nothing — not a font, not a script, not an analytics beacon —
-is fetched from anyone else.
+is fetched from anyone else while someone is just looking around the site.
 
 This is deliberate on three counts: a student on hospital wifi with a blocked
 CDN still gets a working site; there is no third party collecting IP addresses
-from your buyers, which is what the privacy section promises; and there is no
-outage but your own. `tools/check.mjs` asserts it, failing the build if any
-external host creeps back in.
+from a visitor who never buys anything; and there is no outage but your own.
+`tools/check.mjs` asserts it, failing the build if any external host creeps
+into ordinary browsing.
+
+Checkout is the one deliberate exception — paying necessarily sends the
+buyer to Razorpay's own page, and the webhook/database/storage calls behind
+delivery talk to Razorpay, Neon, Cloudflare R2 and Resend. `legal.html`
+names all four and what each one actually receives.
 
 ## Checks
 
@@ -341,11 +365,16 @@ python3 -m http.server 8099
 node tools/check.mjs
 ```
 
-Drives a real browser over the 3D figure, both filter levels, the cart, QR
+Drives a real browser over the 3D figure, both filter levels, the cart,
 checkout, the dashboard, profile persistence, the legal and 404 pages, the
-iPad layout, and the no-third-party rule. Exits non-zero on failure, so it
-drops straight into CI. `BASE_URL=https://… node tools/check.mjs` runs it
-against a deployed build.
+iPad layout, and the no-third-party-while-browsing rule. Against a plain
+static server (no Vercel functions), checkout has no backend to reach, so
+what this actually proves about it is that it fails with a clear message and
+leaves the cart untouched, rather than silently faking a sale. Exits
+non-zero on failure, so it drops straight into CI. `BASE_URL=https://…
+node tools/check.mjs` runs it against a deployed build. Pair it with `node
+tools/check-api.mjs` (see **The backend** above) for the parts of checkout
+that don't need a browser at all.
 
 ## The share image
 
@@ -408,6 +437,8 @@ your input:
 
 ## Notes on privacy
 
-Cart, orders and profile live in the buyer's `localStorage` and never leave
-their browser until they choose to send the order email. No analytics, no
-trackers, and no third-party requests of any kind — see above.
+Cart and profile live in the buyer's `localStorage` and never leave their
+browser. No analytics, no trackers, and no third-party requests while
+browsing — see above. Checkout itself necessarily involves Razorpay, Neon,
+Cloudflare R2 and Resend; `legal.html` is explicit about what each receives
+and does not receive.

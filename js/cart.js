@@ -109,30 +109,15 @@ export function orders() {
 
 /**
  * Record a placed order locally so the buyer can see it on their dashboard
- * while manual (QR) payment is confirmed out of band.
+ * once the server has actually accepted it — see cart.html, which calls
+ * this only after api/create-order.js returns successfully. There is no
+ * local-only fallback order any more: without a working backend, checkout
+ * shows a clear "unavailable" message instead of faking a sale.
  */
 export function saveOrder(order) {
   write(ORDERS_KEY, [order, ...orders()]);
   clear();
   return order;
-}
-
-/**
- * Fallback used only when the order API is unreachable or not configured.
- * The total here is computed in the browser and is therefore advisory —
- * when the API is available the server prices the order instead.
- */
-export function placeOrder({ email, txnId }) {
-  return saveOrder({
-    ref: "DV" + Date.now().toString(36).toUpperCase().slice(-7),
-    placedAt: new Date().toISOString(),
-    email,
-    txnId,
-    status: "awaiting-confirmation",
-    total: subtotal(),
-    items: items().map(({ id, title, price }) => ({ id, title, price })),
-    recordedOnServer: false,
-  });
 }
 
 /* ---------- profile ---------- */
