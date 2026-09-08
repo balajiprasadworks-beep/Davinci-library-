@@ -50,6 +50,7 @@
     });
 
   const STATUS_LABEL = {
+    "awaiting-payment": "Awaiting payment (Cashfree)",
     "awaiting-payment-check": "Awaiting payment check",
     delivered: "Delivered",
     refunded: "Refunded",
@@ -101,6 +102,9 @@
         <li><code>RESEND_API_KEY</code> — ${tick(h.mail.RESEND_API_KEY)}</li>
         <li><code>SELLER_EMAIL</code> — ${tick(h.mail.SELLER_EMAIL)}</li>
         <li><code>MAIL_FROM</code> — ${tick(h.mail.MAIL_FROM)} <span class="sub">(optional)</span></li>
+        <li><code>CASHFREE_APP_ID</code> — ${tick(h.cashfree.CASHFREE_APP_ID)} <span class="sub">(optional — card/UPI checkout)</span></li>
+        <li><code>CASHFREE_SECRET_KEY</code> — ${tick(h.cashfree.CASHFREE_SECRET_KEY)} <span class="sub">(optional)</span></li>
+        ${h.cashfree.configured ? `<li><span class="sub">Cashfree mode: <strong>${esc(h.cashfree.mode)}</strong></span></li>` : ""}
       </ul>
       ${rt ? `<p class="panel-note">Live database check: ${rt.ok
         ? `<span style="color:var(--ok)">reachable in ${rt.ms} ms</span>`
@@ -127,11 +131,12 @@
   }
 
   function orderHTML(o) {
-    const outstanding = o.status === "awaiting-payment-check";
+    const outstanding = o.status === "awaiting-payment-check" || o.status === "awaiting-payment";
+    const gateway = o.provider === "cashfree";
     return `
     <div class="cart-line order-line">
       <div class="cart-line-body">
-        <h4>${esc(o.ref)} · ${money(o.total)}</h4>
+        <h4>${esc(o.ref)} · ${money(o.total)}${gateway ? ` <span class="sub">· Cashfree</span>` : ""}</h4>
         <span class="sub">
           ${new Date(o.placedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
           · ${esc(STATUS_LABEL[o.status] ?? o.status)}
@@ -141,8 +146,11 @@
         </ul>
         <p class="panel-note u-mt-sm" style="margin-bottom:0">
           <a href="mailto:${encodeURIComponent(o.email)}">${esc(o.email)}</a>
-          · UPI ref <strong>${esc(o.txnId)}</strong>
+          ${o.txnId ? `· UPI ref <strong>${esc(o.txnId)}</strong>` : ""}
         </p>
+        ${o.status === "awaiting-payment"
+          ? `<p class="panel-note u-mt-sm" style="margin-bottom:0">Cashfree normally confirms this on its own within moments. Only use "Mark delivered" below if it has been sitting here a while — check the order in your Cashfree dashboard first.</p>`
+          : ""}
       </div>
       ${outstanding
         ? `<button class="btn btn-sm btn-vital" data-deliver="${esc(o.ref)}">Mark delivered</button>`

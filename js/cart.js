@@ -117,6 +117,16 @@ export function saveOrder(order) {
   return order;
 }
 
+export function findOrder(ref) {
+  return orders().find((o) => o.ref === ref) ?? null;
+}
+
+/** Used after a Cashfree redirect confirms (or is still confirming) a
+ *  payment, so the buyer's own dashboard reflects it without a refetch. */
+export function updateOrderStatus(ref, status) {
+  write(ORDERS_KEY, orders().map((o) => (o.ref === ref ? { ...o, status } : o)));
+}
+
 /**
  * Fallback used only when the order API is unreachable or not configured.
  * The total here is computed in the browser and is therefore advisory —

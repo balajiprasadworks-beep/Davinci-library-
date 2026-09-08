@@ -17,6 +17,7 @@
 
 import * as store from "./_lib/store.js";
 import * as blob from "./_lib/blob.js";
+import * as cashfree from "./_lib/cashfree.js";
 import { canSend, seller } from "./_lib/mail.js";
 import { PRODUCTS } from "../js/catalog.js";
 import { json, methodIs, isAdmin } from "./_lib/http.js";
@@ -49,6 +50,12 @@ export default async function handler(req, res) {
       // token being set doesn't mean anything has been uploaded.
       titlesLinked: PRODUCTS.filter((p) => p.blobPath).length,
       titlesTotal: PRODUCTS.length,
+    },
+    cashfree: {
+      configured: cashfree.isConfigured(),
+      CASHFREE_APP_ID: env("CASHFREE_APP_ID"),
+      CASHFREE_SECRET_KEY: env("CASHFREE_SECRET_KEY"),
+      mode: cashfree.mode(),
     },
   };
 

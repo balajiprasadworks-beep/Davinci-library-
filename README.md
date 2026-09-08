@@ -133,14 +133,17 @@ hotspot all pick it up automatically.
 
 ## The backend
 
-The site is static, but `/api` holds three Vercel serverless functions that
-record orders. **All of it is optional** — with no environment variables set,
-checkout falls back to the original browser-only flow and nothing breaks. The
-test suite covers both paths.
+The site is static, but `/api` holds a handful of Vercel serverless functions
+that record orders. **All of it is optional** — with no environment variables
+set, checkout falls back to the original browser-only flow and nothing
+breaks. The test suite covers every path.
 
 | Route | Who | What |
 | --- | --- | --- |
-| `POST /api/order` | buyer | Prices the order from the catalogue, stores it, emails you and the buyer |
+| `POST /api/order` | buyer | Manual QR/UPI path: prices the order, stores it, emails you and the buyer |
+| `POST /api/cashfree-create-order` | buyer | Gateway path: prices the order, opens a Cashfree checkout session |
+| `POST /api/cashfree-webhook` | Cashfree | Confirms a payment and triggers delivery automatically — see **Real payment gateway** below |
+| `GET /api/order-lookup?ref=` | buyer | Minimal status check (ref + status only) for the page a buyer lands back on after paying |
 | `GET /api/orders` | you | The order book behind `ADMIN_TOKEN` |
 | `POST /api/order-status` | you | Mark delivered / refunded / cancelled |
 | `GET /api/health` | anyone | Which variables landed. Booleans only, never values. With an admin token it also round-trips the database. |
@@ -170,6 +173,8 @@ In Vercel, **Settings → Environment Variables**, then redeploy:
 | `ADMIN_TOKEN` | Any long random string. Opens `/admin.html`. Unset means the admin API is off, not open. |
 | `RESEND_API_KEY`, `SELLER_EMAIL`, `MAIL_FROM` | So a new order emails you. Optional — a failed email never fails an order. |
 | `BLOB_READ_WRITE_TOKEN` | Lets "Mark delivered" auto-attach a download link. See **Automatic file delivery** below — Vercel sets this for you when you connect a **private** Blob store, nothing to type in. |
+| `CASHFREE_APP_ID`, `CASHFREE_SECRET_KEY` | Turns on real card/UPI checkout through Cashfree. See **Real payment gateway** below. Without these, checkout stays on the manual QR flow. |
+| `CASHFREE_ENV` | `PRODUCTION` to take real payments. Anything else, including unset, means sandbox — test money only. Deliberately not defaulting to production: a typo here fails toward "no real charges." |
 
 One honest caveat on email: Resend only delivers to arbitrary addresses once
 you verify a sending domain. Until then `MAIL_FROM` must be
@@ -189,20 +194,30 @@ which name is wrong instead of guessing from a failing checkout. Or hit
 node tools/check-api.mjs
 ```
 
-36 tests, no server and (for these paths) no real network — Redis and Resend
-are stubbed via `fetch`. Covers server-side pricing, that a client-supplied
-total is ignored, validation, admin auth, that marking an order delivered
-emails the buyer exactly once, and that the delivery email correctly links a
-title's file (or falls back gracefully when nothing presigns — a missing
-`blobPath`, or a slow/failing call to Vercel's Blob API, both leave the
-"delivered" transition and the email itself unharmed).
+46 tests, no server and (for these paths) no real network — Redis, Resend and
+Cashfree are all stubbed via `fetch` (Cashfree's REST API is called with a
+plain `fetch`, same as the others, specifically so it stays testable this
+way — see the note in `_lib/cashfree.js`). Covers server-side pricing, that a
+client-supplied total is ignored, validation, admin auth, that marking an
+order delivered emails the buyer exactly once, that the delivery email
+correctly links a title's file (or falls back gracefully when nothing
+presigns — a missing `blobPath`, or a slow/failing call to Vercel's Blob API,
+both leave the "delivered" transition and the email itself unharmed), that a
+Cashfree webhook with a bad signature is refused and does nothing, that a
+verified one finalizes and delivers exactly once even if Cashfree retries
+it, that a buyer's own return-page poll finalizes a paid order even when the
+webhook never arrives at all, and that a webhook and that poll landing at
+the exact same moment — a genuine race, not a retry — still only deliver
+once.
 
 ---
 
 ## How the money flows
 
-There is still no payment gateway. The flow is deliberately manual, which is
-what works for a solo seller:
+Two paths, and the buyer only ever sees one of them — whichever the
+environment variables say is available. Without Cashfree configured,
+checkout is deliberately manual, which is what works for a solo seller with
+no payment gateway at all:
 
 1. Buyer adds notes to the cart.
 2. Checkout shows your QR and the exact total.
@@ -210,8 +225,9 @@ what works for a solo seller:
 4. Buyer enters their email and the transaction ID.
 5. The site records the order, gives them a reference (`DV…`), and opens a
    prefilled email or WhatsApp message addressed to you.
-6. **You** check your bank — there is no payment gateway, so this step is
-   never automatic — then mark the order delivered on `/admin.html`.
+6. **You** check your bank — there is no payment gateway on this path, so
+   this step is never automatic — then mark the order delivered on
+   `/admin.html`.
 7. That marks the buyer's file(s) as sent. If the title has a `blobPath`
    (see below), the email to the buyer includes a fresh, expiring download
    link automatically. If not, it says the file is coming separately, and
@@ -221,7 +237,9 @@ With the backend on, step 5 happens automatically and the buyer has nothing to
 send you. Without it, they have to email the reference themselves.
 
 Orders are stored in the buyer's own browser so they can see their history on
-the dashboard. **You** are the system of record — check your bank, then deliver.
+the dashboard. **You** are the system of record on the manual path — check
+your bank, then deliver. On the Cashfree path below, Cashfree is the system
+of record, and delivery happens on its own.
 
 ### Automatic file delivery
 
@@ -281,6 +299,80 @@ whenever the order book loads, and `/api/health` reports `fileDelivery` —
 whether the token is set and how many titles have a `blobPath`, as booleans
 and counts only, never the token or a URL.
 
+### Real payment gateway (Cashfree)
+
+With `CASHFREE_APP_ID` and `CASHFREE_SECRET_KEY` set, checkout replaces the
+QR/manual-reference flow above with a real one: the buyer pays through
+Cashfree's own hosted checkout (UPI, cards, netbanking), and delivery
+happens on its own — no bank statement to check, no "mark delivered" click.
+
+**How it actually flows:**
+
+1. Buyer enters an email and clicks "Pay" — no transaction ID, because
+   payment hasn't happened yet.
+2. The server prices the order from the catalogue (same as the manual path,
+   same tamper-proof reasoning), opens a Cashfree order for it, and only
+   *then* records its own copy — if Cashfree's side fails, nothing is left
+   behind to clean up.
+3. The buyer is sent to Cashfree's checkout to actually pay.
+4. Cashfree redirects them back to `cart.html?order=DV-XXXXXX` and, in
+   parallel, sends a webhook to `/api/cashfree-webhook`.
+5. Either one — usually both — triggers the same finalize step: **re-ask
+   Cashfree directly**, with our own credentials, whether that order is
+   really `PAID`. The webhook's signature is checked first, but it's a
+   courtesy, not the security boundary — nothing here ever marks an order
+   paid on a webhook body's say-so alone, only on what Cashfree's own API
+   confirms when asked again.
+6. Once confirmed, the order is marked delivered and the buyer is emailed —
+   the exact same delivery step (`_lib/deliver.js`) the manual "mark
+   delivered" button uses, presigned Blob links included where a title has
+   one.
+
+**Why both a webhook and a poll**: a webhook can be slow, dropped, or land
+before the buyer's browser is even back on the page. The buyer's own return
+trip to `cart.html` polls `/api/order-lookup`, which performs the exact same
+Cashfree-confirms-it-first finalize check as a backstop — in practice this
+is usually what actually resolves the order, not the webhook. If somehow
+neither happens (the buyer closes the tab mid-payment and the webhook is
+also lost), the order sits as `awaiting-payment` and shows up in
+`/admin.html`'s order book with the ordinary "Mark delivered" button as a
+manual last resort.
+
+Having two independent triggers for the same finalize step means they can
+land within moments of each other, sometimes closer together than one
+Cashfree API round trip — a short-lived lock in Redis (`store.tryLock`)
+makes sure only one of them actually delivers; the other backs off rather
+than emailing the buyer a second time. Tested with a genuine concurrent
+race, not just a sequential retry.
+
+**One-time setup:**
+
+1. Create a Cashfree Payments merchant account and, from the dashboard,
+   generate an API key pair (App ID + Secret Key). Start in **Test Mode** —
+   sandbox credentials, no real money — until you're ready to go live.
+2. Add `CASHFREE_APP_ID` and `CASHFREE_SECRET_KEY` in Vercel
+   (**Settings → Environment Variables**), then redeploy.
+3. That's it for sandbox. To take real payments, switch the dashboard to
+   **Live Mode** for a second key pair, update the two variables, and set
+   `CASHFREE_ENV=PRODUCTION`. Leaving `CASHFREE_ENV` unset — even with live
+   keys sitting in the other two variables — keeps requests on Cashfree's
+   sandbox, so a half-finished setup fails toward "no real charges," not
+   the other way round.
+
+Nothing to configure for the webhook URL by hand: `/api/cashfree-create-order`
+tells Cashfree where to send it (`https://<your-domain>/api/cashfree-webhook`)
+on every order it opens.
+
+**The one deliberate exception to "no third-party requests"** (see below):
+Cashfree's checkout script (`sdk.cashfree.com`) is loaded, but only on
+`cart.html`, only once a buyer actually clicks "Pay," and only when Cashfree
+is configured at all. A payment processor's live checkout — PCI compliance,
+3-D Secure redirects, real UPI intents — cannot be self-hosted the way a
+font or a JS framework can; every other page on the site stays exactly as
+untouched as it always was. `tools/check.mjs`'s zero-external-hosts
+assertion still passes as-is: Cashfree is never configured in the test
+environment, so the script is never requested during the test run.
+
 ---
 
 ## The 3D figure
@@ -332,6 +424,13 @@ CDN still gets a working site; there is no third party collecting IP addresses
 from your buyers, which is what the privacy section promises; and there is no
 outage but your own. `tools/check.mjs` asserts it, failing the build if any
 external host creeps back in.
+
+**One deliberate exception, only if you turn it on**: Cashfree's checkout
+script, loaded only on the cart page and only at the moment a buyer pays —
+see **Real payment gateway** above. A payment processor's own live checkout
+infrastructure is not something a font or a JS framework's substitute
+(self-hosting a copy) can stand in for. It never loads with Cashfree
+unconfigured, which is the state `tools/check.mjs` runs in.
 
 ## Checks
 

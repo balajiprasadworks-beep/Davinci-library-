@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     return json(res, 200, {
       orders,
       count: orders.length,
-      outstanding: orders.filter((o) => o.status === "awaiting-payment-check").length,
+      outstanding: orders.filter((o) => o.status === "awaiting-payment-check" || o.status === "awaiting-payment").length,
       revenue: orders.filter((o) => o.status === "delivered").reduce((s, o) => s + o.total, 0),
     });
   } catch (err) {

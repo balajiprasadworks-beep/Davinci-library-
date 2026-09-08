@@ -90,7 +90,29 @@
     </form>`;
   }
 
-  function confirmedHTML(order, onServer = false) {
+  /**
+   * The gateway path: one field, one button. Cashfree's own hosted
+   * checkout collects however the buyer chooses to pay (UPI, card,
+   * netbanking) — nothing here needs to ask for a reference, because
+   * Cashfree tells the server directly whether it was actually paid.
+   */
+  function cashfreePanelHTML(total) {
+    return `
+    <!-- novalidate: see the note on the QR form above — same reason. -->
+    <form class="glass qr-panel form-left" id="cashfree-form" novalidate>
+      <p class="eyebrow">Pay ${money(total)}</p>
+      <div class="field" id="field-cf-email">
+        <label for="cf-email">Email for delivery</label>
+        <input type="email" id="cf-email" name="email" required autocomplete="email"
+               placeholder="you@example.com" aria-describedby="err-cf-email">
+        <p class="field-error" id="err-cf-email">Enter the email address your notes should go to.</p>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Pay ${money(total)} with Cashfree</button>
+      <p class="qr-note u-mt-sm">UPI, cards and netbanking. You'll come straight back here once it's done.</p>
+    </form>`;
+  }
+
+  function confirmedHTML(order, variant) {
     const lines = order.items.map((i) => `${i.title} — ${money(i.price)}`).join("\n");
     const body = encodeURIComponent(
       `Order ${order.ref}\n\n${lines}\n\nTotal: ${money(order.total)}\nTransaction ID: ${order.txnId}\nDeliver to: ${order.email}`
@@ -100,6 +122,49 @@
       ? `<a class="btn btn-ghost" href="https://wa.me/${SITE.whatsapp}?text=${body}" target="_blank" rel="noopener">Send on WhatsApp</a>`
       : "";
 
+    const toEmail = order.email ? ` to <strong>${esc(order.email)}</strong>` : "";
+    const notes = {
+      gateway: `
+        <p class="order-note">
+          Payment received — your notes are on their way${toEmail} right now.
+        </p>
+        <div class="order-actions">
+          <a class="btn btn-primary" href="dashboard.html">View my orders</a>
+          <a class="btn btn-ghost" href="index.html">Keep browsing</a>
+        </div>`,
+      "gateway-pending": `
+        <p class="order-note">
+          Still confirming with the payment gateway — this can take a
+          minute. You don't need to do anything; your notes reach${toEmail}
+          the moment it clears, and the order book will show it too.
+        </p>
+        <div class="order-actions">
+          <a class="btn btn-primary" href="dashboard.html">View my orders</a>
+          <a class="btn btn-ghost" href="index.html">Keep browsing</a>
+        </div>`,
+      server: `
+        <p class="order-note">
+          We have your order and your payment reference — nothing else is needed
+          from you. Your notes reach <strong>${esc(order.email)}</strong> within
+          12 hours, once the payment is checked.
+        </p>
+        <div class="order-actions">
+          <a class="btn btn-primary" href="dashboard.html">View my orders</a>
+          <a class="btn btn-ghost" href="index.html">Keep browsing</a>
+        </div>`,
+      local: `
+        <p class="order-note">
+          Your order is saved on this device. <strong>Send us the reference</strong>
+          so your notes can be released — they'll reach
+          <strong>${esc(order.email)}</strong> within 12 hours.
+        </p>
+        <div class="order-actions">
+          <a class="btn btn-primary" href="mailto:${SITE.contactEmail}?subject=${subject}&body=${body}">Email the reference</a>
+          ${wa}
+          <a class="btn btn-ghost" href="dashboard.html">View my orders</a>
+        </div>`,
+    };
+
     return `
     <div class="glass empty-state order-confirm">
       ${icons.check}
@@ -107,26 +172,17 @@
       <p class="order-ref">
         ${esc(order.ref)}
       </p>
-      ${onServer ? `
-      <p class="order-note">
-        We have your order and your payment reference — nothing else is needed
-        from you. Your notes reach <strong>${esc(order.email)}</strong> within
-        12 hours, once the payment is checked.
-      </p>
-      <div class="order-actions">
-        <a class="btn btn-primary" href="dashboard.html">View my orders</a>
-        <a class="btn btn-ghost" href="index.html">Keep browsing</a>
-      </div>` : `
-      <p class="order-note">
-        Your order is saved on this device. <strong>Send us the reference</strong>
-        so your notes can be released — they'll reach
-        <strong>${esc(order.email)}</strong> within 12 hours.
-      </p>
-      <div class="order-actions">
-        <a class="btn btn-primary" href="mailto:${SITE.contactEmail}?subject=${subject}&body=${body}">Email the reference</a>
-        ${wa}
-        <a class="btn btn-ghost" href="dashboard.html">View my orders</a>
-      </div>`}
+      ${notes[variant]}
+    </div>`;
+  }
+
+  function confirmingHTML(ref) {
+    return `
+    <div class="glass empty-state order-confirm">
+      ${icons.check}
+      <h2>Confirming your payment…</h2>
+      <p class="order-ref">${esc(ref)}</p>
+      <p class="order-note">This only takes a moment.</p>
     </div>`;
   }
 
@@ -153,7 +209,7 @@
         // Keep a local copy so the dashboard still works offline.
         return {
           order: cart.saveOrder({ ...server, txnId, status: "awaiting-payment-check", recordedOnServer: true }),
-          onServer: true,
+          variant: "server",
         };
       }
 
@@ -167,10 +223,123 @@
       // Offline, or the API route does not exist on this host.
     }
 
-    return { order: cart.placeOrder({ email, txnId }), onServer: false };
+    return { order: cart.placeOrder({ email, txnId }), variant: "local" };
   }
 
-  function paint() {
+  /**
+   * Detected once per page load, never assumed: whether /api/health
+   * says Cashfree is actually wired up server-side. Any failure here
+   * (offline, no backend, health route missing) means false, which
+   * means the QR/manual flow below — a missing environment variable
+   * must not cost anyone a checkout.
+   */
+  async function cashfreeIsAvailable() {
+    try {
+      const res = await fetch("/api/health");
+      if (!res.ok) return false;
+      const h = await res.json();
+      return Boolean(h?.cashfree?.configured);
+    } catch {
+      return false;
+    }
+  }
+
+  let cashfreeSdkPromise = null;
+  function loadCashfreeSdk() {
+    if (cashfreeSdkPromise) return cashfreeSdkPromise;
+    // Loaded only here, only when a buyer is actually about to pay through
+    // Cashfree — the one deliberate exception to "nothing on this site is
+    // fetched from anyone else" (see README). A payment processor's live
+    // checkout cannot be self-hosted; every other page stays untouched.
+    cashfreeSdkPromise = new Promise((resolve, reject) => {
+      if (window.Cashfree) return resolve(window.Cashfree);
+      const script = document.createElement("script");
+      script.src = "https://sdk.cashfree.com/js/v3/cashfree.js";
+      script.onload = () => window.Cashfree ? resolve(window.Cashfree) : reject(new Error("Cashfree.js did not load"));
+      script.onerror = () => reject(new Error("Could not load the payment gateway"));
+      document.head.appendChild(script);
+    });
+    return cashfreeSdkPromise;
+  }
+
+  async function submitCashfreeOrder({ email }) {
+    const ids = cart.items().map((p) => p.id);
+    const res = await fetch("/api/cashfree-create-order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, email }),
+    });
+
+    if (!res.ok) {
+      if (res.status === 400) {
+        const { error, field } = await res.json();
+        return { error: { message: error, field } };
+      }
+      const { error } = await res.json().catch(() => ({}));
+      return { error: { message: error ?? "The payment gateway is unavailable right now." } };
+    }
+
+    const server = await res.json();
+    // Saved before redirecting: if the buyer never makes it back (closes
+    // the tab mid-payment), the order still shows up on their dashboard.
+    cart.saveOrder({ ...server, status: "awaiting-payment", provider: "cashfree" });
+
+    const CashfreeFactory = await loadCashfreeSdk();
+    const cashfree = CashfreeFactory({ mode: server.mode === "production" ? "production" : "sandbox" });
+    cashfree.checkout({ paymentSessionId: server.paymentSessionId, redirectTarget: "_self" });
+    return { redirecting: true };
+  }
+
+  /**
+   * Polls /api/order-lookup after a Cashfree redirect back to this page.
+   * order-lookup itself re-checks with Cashfree directly and finalizes
+   * the order if it finds one that's actually paid, so most of the time
+   * this resolves on the very first poll — the webhook usually isn't
+   * even the thing that gets there first.
+   */
+  async function pollOrderStatus(ref, { tries = 10, intervalMs = 2000 } = {}) {
+    for (let i = 0; i < tries; i++) {
+      try {
+        const res = await fetch(`/api/order-lookup?ref=${encodeURIComponent(ref)}`);
+        if (res.ok) {
+          const { status } = await res.json();
+          if (status && status !== "awaiting-payment") return status;
+        }
+      } catch {
+        // A dropped request just means this round doesn't count — retry.
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    return null; // gave up — not a failure, just not resolved yet
+  }
+
+  /** True when this page load is a Cashfree redirect coming back, not a
+   *  normal visit to the cart. Handled before anything else paints. */
+  async function handleGatewayReturn() {
+    const params = new URLSearchParams(location.search);
+    const ref = params.get("order");
+    if (!ref) return false;
+
+    history.replaceState(null, "", location.pathname);
+    root.innerHTML = confirmingHTML(ref);
+
+    const status = await pollOrderStatus(ref);
+    const local = cart.findOrder(ref);
+
+    if (status === "delivered") {
+      cart.updateOrderStatus(ref, "delivered");
+      root.innerHTML = confirmedHTML(local ?? { ref, email: "", items: [], total: 0 }, "gateway");
+      toast("Payment received");
+    } else {
+      // Not resolved within the poll window — genuinely not an error;
+      // the webhook (or the buyer's next visit, which polls again via
+      // order-lookup) still finalizes it. Never tell them it failed.
+      root.innerHTML = confirmedHTML(local ?? { ref, email: "", items: [], total: 0 }, "gateway-pending");
+    }
+    return true;
+  }
+
+  async function paint() {
     const items = cart.items();
     if (!items.length) {
       root.innerHTML = emptyHTML();
@@ -179,6 +348,7 @@
 
     const total = cart.subtotal();
     const saved = cart.savings();
+    const gateway = await cashfreeIsAvailable();
 
     root.innerHTML = `
     <div class="cart-layout">
@@ -201,9 +371,40 @@
           <div class="summary-row"><span>Delivery</span><span>Email · free</span></div>
           <div class="summary-row total"><span>Total</span><span class="price">${money(total)}</span></div>
         </div>
-        ${qrPanelHTML(total)}
+        ${gateway ? cashfreePanelHTML(total) : qrPanelHTML(total)}
       </aside>
     </div>`;
+
+    root.querySelector("#cashfree-form")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const email = form.email.value.trim();
+
+      const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
+      document.getElementById("field-cf-email").classList.toggle("has-error", !emailOk);
+      if (!emailOk) return document.getElementById("cf-email").focus();
+
+      const button = form.querySelector("button[type=submit]");
+      button.disabled = true;
+      button.textContent = "Opening payment…";
+
+      const { error } = await submitCashfreeOrder({ email }) ?? {};
+
+      if (error) {
+        button.disabled = false;
+        button.textContent = `Pay ${money(total)} with Cashfree`;
+        const field = document.getElementById("field-cf-email");
+        if (error.field === "email" && field) {
+          field.classList.add("has-error");
+          field.querySelector(".field-error").textContent = error.message;
+        } else {
+          toast(error.message);
+        }
+        return;
+      }
+      // On success the browser is already navigating to Cashfree —
+      // nothing left to render here.
+    });
 
     root.querySelector("#confirm-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -223,7 +424,7 @@
       button.disabled = true;
       button.textContent = "Recording your order…";
 
-      const { order, onServer, error } = await submitOrder({ email, txnId });
+      const { order, variant, error } = await submitOrder({ email, txnId });
 
       if (error) {
         button.disabled = false;
@@ -238,7 +439,7 @@
         return;
       }
 
-      root.innerHTML = confirmedHTML(order, onServer);
+      root.innerHTML = confirmedHTML(order, variant);
       toast("Order placed");
     });
   }
@@ -251,7 +452,7 @@
     paint();
   });
 
-  paint();
+  handleGatewayReturn().then((handled) => { if (!handled) paint(); });
 </script>
 
 </body>

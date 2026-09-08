@@ -42,21 +42,15 @@ export class OrderError extends Error {
   }
 }
 
-/**
- * Turn a request body into an order, or throw OrderError.
- * @param {{ids?: unknown, email?: unknown, txnId?: unknown}} body
- */
-export function build(body) {
+function priceEmail(body) {
   const email = clean(body?.email, 254).toLowerCase();
   if (!EMAIL.test(email)) {
     throw new OrderError("Enter the email address your notes should go to.", "email");
   }
+  return email;
+}
 
-  const txnId = clean(body?.txnId, 64);
-  if (txnId.length < 4) {
-    throw new OrderError("Enter the reference your UPI app showed after payment.", "txnId");
-  }
-
+function priceItems(body) {
   if (!Array.isArray(body?.ids) || body.ids.length === 0) {
     throw new OrderError("Your cart is empty.", "ids");
   }
@@ -74,6 +68,24 @@ export function build(body) {
     }
     items.push({ id: product.id, title: product.title, price: product.price });
   }
+  return items;
+}
+
+/**
+ * Turn a request body into an order, or throw OrderError. The manual
+ * QR/UPI path: the buyer has already paid by the time this runs, and
+ * types in their own reference as proof.
+ * @param {{ids?: unknown, email?: unknown, txnId?: unknown}} body
+ */
+export function build(body) {
+  const email = priceEmail(body);
+
+  const txnId = clean(body?.txnId, 64);
+  if (txnId.length < 4) {
+    throw new OrderError("Enter the reference your UPI app showed after payment.", "txnId");
+  }
+
+  const items = priceItems(body);
 
   return {
     ref: reference(),
@@ -87,4 +99,29 @@ export function build(body) {
   };
 }
 
-export const STATUSES = ["awaiting-payment-check", "delivered", "refunded", "cancelled"];
+/**
+ * The Cashfree path: payment hasn't happened yet — the order is
+ * created first so Cashfree has an order_id to attach a checkout
+ * session to, and only turns into "delivered" once Cashfree confirms
+ * it was actually paid (see _lib/cashfree.js and _lib/finalize.js).
+ * No txnId: Cashfree tells us the payment succeeded, so the buyer
+ * never has to transcribe one.
+ * @param {{ids?: unknown, email?: unknown}} body
+ */
+export function buildPending(body) {
+  const email = priceEmail(body);
+  const items = priceItems(body);
+
+  return {
+    ref: reference(),
+    placedAt: new Date().toISOString(),
+    email,
+    txnId: null,
+    provider: "cashfree",
+    status: "awaiting-payment",
+    total: items.reduce((sum, i) => sum + i.price, 0),
+    items,
+  };
+}
+
+export const STATUSES = ["awaiting-payment", "awaiting-payment-check", "delivered", "refunded", "cancelled"];

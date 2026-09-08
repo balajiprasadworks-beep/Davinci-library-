@@ -5,10 +5,8 @@
    ============================================================ */
 
 import * as store from "./_lib/store.js";
-import * as mail from "./_lib/mail.js";
-import * as blob from "./_lib/blob.js";
+import { deliver } from "./_lib/deliver.js";
 import { STATUSES } from "./_lib/order.js";
-import { PRODUCTS } from "../js/catalog.js";
 import { json, methodIs, body, requireAdmin } from "./_lib/http.js";
 
 export default async function handler(req, res) {
@@ -38,31 +36,7 @@ export default async function handler(req, res) {
     // an already-delivered order does not email them twice.
     let notified = false;
     if (status === "delivered" && was !== "delivered") {
-      // order.items is the checkout-time snapshot (id, title, price) and
-      // never carries a delivery link — resolve whatever blobPath the
-      // catalogue holds today, so uploading a note after the order was
-      // placed still gets it linked correctly.
-      //
-      // The store is private, so a blobPath alone isn't a working link —
-      // each one needs a fresh presigned URL, generated now rather than
-      // once at upload time. That call can fail on its own (a bad
-      // pathname, a Blob API hiccup) without one broken title blocking
-      // the rest of the order or the "delivered" transition itself, so
-      // each is resolved independently and a failure just omits the link
-      // for that title.
-      const resolvedItems = await Promise.all(order.items.map(async (item) => {
-        const path = PRODUCTS.find((p) => p.id === item.id)?.blobPath;
-        if (!path) return item;
-        try {
-          return { ...item, fileUrl: await blob.presignDownload(path) };
-        } catch (err) {
-          console.warn(`could not presign a link for ${item.id}:`, err);
-          return item;
-        }
-      }));
-
-      const result = await mail.deliveredToBuyer(order, resolvedItems)
-        .catch((e) => ({ sent: false, reason: String(e) }));
+      const result = await deliver(order);
       notified = result.sent;
       if (!result.sent) console.warn("delivery email not sent:", result.reason);
     }

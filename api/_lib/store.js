@@ -86,3 +86,18 @@ export async function probe() {
   await redis(["SET", key, token, "EX", 60]);
   return (await redis(["GET", key])) === token;
 }
+
+/**
+ * A short-lived mutex, for the one place two different triggers can
+ * race to finalize the same Cashfree order (the webhook and the
+ * buyer's own return-page poll — see _lib/finalize.js). `SET ... NX`
+ * only succeeds if the key does not already exist, so at most one
+ * caller gets `true`; everyone else gets `false` and should treat
+ * that as "someone else has this" rather than an error. No explicit
+ * unlock: the TTL clears it, and by the time it would matter the
+ * work is already done either way.
+ */
+export async function tryLock(key, ttlSeconds) {
+  const result = await redis(["SET", key, "1", "NX", "EX", String(ttlSeconds)]);
+  return result === "OK";
+}
