@@ -100,11 +100,11 @@ export function build(body) {
 }
 
 /**
- * The Cashfree path: payment hasn't happened yet — the order is
- * created first so Cashfree has an order_id to attach a checkout
- * session to, and only turns into "delivered" once Cashfree confirms
- * it was actually paid (see _lib/cashfree.js and _lib/finalize.js).
- * No txnId: Cashfree tells us the payment succeeded, so the buyer
+ * The Razorpay path: payment hasn't happened yet — the order is
+ * created first so Razorpay has something to attach a checkout
+ * session to, and only turns into "delivered" once Razorpay confirms
+ * it was actually paid (see _lib/razorpay.js and _lib/finalize.js).
+ * No txnId: Razorpay tells us the payment succeeded, so the buyer
  * never has to transcribe one.
  * @param {{ids?: unknown, email?: unknown}} body
  */
@@ -117,7 +117,7 @@ export function buildPending(body) {
     placedAt: new Date().toISOString(),
     email,
     txnId: null,
-    provider: "cashfree",
+    provider: "razorpay",
     status: "awaiting-payment",
     total: items.reduce((sum, i) => sum + i.price, 0),
     items,

@@ -91,24 +91,24 @@
   }
 
   /**
-   * The gateway path: one field, one button. Cashfree's own hosted
-   * checkout collects however the buyer chooses to pay (UPI, card,
-   * netbanking) — nothing here needs to ask for a reference, because
-   * Cashfree tells the server directly whether it was actually paid.
+   * The Razorpay path: one field, one button. Standard Checkout opens
+   * as a modal right here on cart.html rather than redirecting away —
+   * its handler function reports success straight to our own script,
+   * which then asks the server to confirm it (see submitRazorpayOrder).
    */
-  function cashfreePanelHTML(total) {
+  function razorpayPanelHTML(total) {
     return `
     <!-- novalidate: see the note on the QR form above — same reason. -->
-    <form class="glass qr-panel form-left" id="cashfree-form" novalidate>
+    <form class="glass qr-panel form-left" id="razorpay-form" novalidate>
       <p class="eyebrow">Pay ${money(total)}</p>
-      <div class="field" id="field-cf-email">
-        <label for="cf-email">Email for delivery</label>
-        <input type="email" id="cf-email" name="email" required autocomplete="email"
-               placeholder="you@example.com" aria-describedby="err-cf-email">
-        <p class="field-error" id="err-cf-email">Enter the email address your notes should go to.</p>
+      <div class="field" id="field-rzp-email">
+        <label for="rzp-email">Email for delivery</label>
+        <input type="email" id="rzp-email" name="email" required autocomplete="email"
+               placeholder="you@example.com" aria-describedby="err-rzp-email">
+        <p class="field-error" id="err-rzp-email">Enter the email address your notes should go to.</p>
       </div>
-      <button type="submit" class="btn btn-primary btn-block">Pay ${money(total)} with Cashfree</button>
-      <p class="qr-note u-mt-sm">UPI, cards and netbanking. You'll come straight back here once it's done.</p>
+      <button type="submit" class="btn btn-primary btn-block">Pay ${money(total)} with Razorpay</button>
+      <p class="qr-note u-mt-sm">UPI, cards, netbanking and wallets — opens right here, no redirect.</p>
     </form>`;
   }
 
@@ -176,16 +176,6 @@
     </div>`;
   }
 
-  function confirmingHTML(ref) {
-    return `
-    <div class="glass empty-state order-confirm">
-      ${icons.check}
-      <h2>Confirming your payment…</h2>
-      <p class="order-ref">${esc(ref)}</p>
-      <p class="order-note">This only takes a moment.</p>
-    </div>`;
-  }
-
   /**
    * Send the order to the API, which prices it from the catalogue and
    * records it so the seller actually learns about the sale.
@@ -228,43 +218,77 @@
 
   /**
    * Detected once per page load, never assumed: whether /api/health
-   * says Cashfree is actually wired up server-side. Any failure here
+   * says Razorpay is actually wired up server-side. Any failure here
    * (offline, no backend, health route missing) means false, which
    * means the QR/manual flow below — a missing environment variable
    * must not cost anyone a checkout.
    */
-  async function cashfreeIsAvailable() {
+  async function razorpayIsAvailable() {
     try {
       const res = await fetch("/api/health");
       if (!res.ok) return false;
       const h = await res.json();
-      return Boolean(h?.cashfree?.configured);
+      return Boolean(h?.razorpay?.configured);
     } catch {
       return false;
     }
   }
 
-  let cashfreeSdkPromise = null;
-  function loadCashfreeSdk() {
-    if (cashfreeSdkPromise) return cashfreeSdkPromise;
+  let razorpaySdkPromise = null;
+  function loadRazorpaySdk() {
+    if (razorpaySdkPromise) return razorpaySdkPromise;
     // Loaded only here, only when a buyer is actually about to pay through
-    // Cashfree — the one deliberate exception to "nothing on this site is
+    // Razorpay — the one deliberate exception to "nothing on this site is
     // fetched from anyone else" (see README). A payment processor's live
     // checkout cannot be self-hosted; every other page stays untouched.
-    cashfreeSdkPromise = new Promise((resolve, reject) => {
-      if (window.Cashfree) return resolve(window.Cashfree);
+    razorpaySdkPromise = new Promise((resolve, reject) => {
+      if (window.Razorpay) return resolve(window.Razorpay);
       const script = document.createElement("script");
-      script.src = "https://sdk.cashfree.com/js/v3/cashfree.js";
-      script.onload = () => window.Cashfree ? resolve(window.Cashfree) : reject(new Error("Cashfree.js did not load"));
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => window.Razorpay ? resolve(window.Razorpay) : reject(new Error("Razorpay checkout.js did not load"));
       script.onerror = () => reject(new Error("Could not load the payment gateway"));
       document.head.appendChild(script);
     });
-    return cashfreeSdkPromise;
+    return razorpaySdkPromise;
   }
 
-  async function submitCashfreeOrder({ email }) {
+  /**
+   * Asks the server to confirm the {razorpay_order_id,
+   * razorpay_payment_id, razorpay_signature} triple Checkout's own
+   * handler function just reported. The server re-verifies the
+   * signature and re-asks Razorpay directly before treating this as
+   * paid (see api/razorpay-verify.js) — this call is what actually
+   * resolves the order, not the handler firing by itself.
+   */
+  async function verifyRazorpayPayment(payload) {
+    try {
+      const res = await fetch("/api/razorpay-verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      return res.ok && data.status === "delivered" ? "delivered" : "pending";
+    } catch {
+      // A dropped request right after a real payment must not read as a
+      // failure — the webhook still finalizes it independently.
+      return "pending";
+    }
+  }
+
+  /**
+   * The Razorpay path: opens Standard Checkout as a modal over this
+   * page. Resolves once the buyer either completes payment (verified
+   * with the server) or dismisses the modal — deliberately NOT on a
+   * bare payment.failed, since Checkout's own modal stays open with a
+   * retry screen after a failed attempt (unless told otherwise); this
+   * only reports the failure and keeps waiting, so a buyer who
+   * retries and succeeds right after isn't lost because the page
+   * already tore the form down under them.
+   */
+  async function submitRazorpayOrder({ email }) {
     const ids = cart.items().map((p) => p.id);
-    const res = await fetch("/api/cashfree-create-order", {
+    const res = await fetch("/api/razorpay-create-order", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids, email }),
@@ -280,63 +304,41 @@
     }
 
     const server = await res.json();
-    // Saved before redirecting: if the buyer never makes it back (closes
-    // the tab mid-payment), the order still shows up on their dashboard.
-    cart.saveOrder({ ...server, status: "awaiting-payment", provider: "cashfree" });
+    // Saved before opening Checkout: if the buyer closes the tab
+    // mid-payment, the order still shows up on their dashboard.
+    cart.saveOrder({ ...server, status: "awaiting-payment", provider: "razorpay" });
 
-    const CashfreeFactory = await loadCashfreeSdk();
-    const cashfree = CashfreeFactory({ mode: server.mode === "production" ? "production" : "sandbox" });
-    cashfree.checkout({ paymentSessionId: server.paymentSessionId, redirectTarget: "_self" });
-    return { redirecting: true };
-  }
+    const RazorpayCheckout = await loadRazorpaySdk();
 
-  /**
-   * Polls /api/order-lookup after a Cashfree redirect back to this page.
-   * order-lookup itself re-checks with Cashfree directly and finalizes
-   * the order if it finds one that's actually paid, so most of the time
-   * this resolves on the very first poll — the webhook usually isn't
-   * even the thing that gets there first.
-   */
-  async function pollOrderStatus(ref, { tries = 10, intervalMs = 2000 } = {}) {
-    for (let i = 0; i < tries; i++) {
-      try {
-        const res = await fetch(`/api/order-lookup?ref=${encodeURIComponent(ref)}`);
-        if (res.ok) {
-          const { status } = await res.json();
-          if (status && status !== "awaiting-payment") return status;
-        }
-      } catch {
-        // A dropped request just means this round doesn't count — retry.
-      }
-      await new Promise((r) => setTimeout(r, intervalMs));
-    }
-    return null; // gave up — not a failure, just not resolved yet
-  }
-
-  /** True when this page load is a Cashfree redirect coming back, not a
-   *  normal visit to the cart. Handled before anything else paints. */
-  async function handleGatewayReturn() {
-    const params = new URLSearchParams(location.search);
-    const ref = params.get("order");
-    if (!ref) return false;
-
-    history.replaceState(null, "", location.pathname);
-    root.innerHTML = confirmingHTML(ref);
-
-    const status = await pollOrderStatus(ref);
-    const local = cart.findOrder(ref);
-
-    if (status === "delivered") {
-      cart.updateOrderStatus(ref, "delivered");
-      root.innerHTML = confirmedHTML(local ?? { ref, email: "", items: [], total: 0 }, "gateway");
-      toast("Payment received");
-    } else {
-      // Not resolved within the poll window — genuinely not an error;
-      // the webhook (or the buyer's next visit, which polls again via
-      // order-lookup) still finalizes it. Never tell them it failed.
-      root.innerHTML = confirmedHTML(local ?? { ref, email: "", items: [], total: 0 }, "gateway-pending");
-    }
-    return true;
+    return new Promise((resolve) => {
+      const rzp = new RazorpayCheckout({
+        key: server.keyId,
+        amount: Math.round(server.total * 100),
+        currency: "INR",
+        name: SITE.name,
+        description: `${server.items.length} ${server.items.length === 1 ? "title" : "titles"}`,
+        order_id: server.razorpayOrderId,
+        prefill: { email: server.email },
+        theme: { color: "#c9a55c" },
+        handler: async function (response) {
+          const status = await verifyRazorpayPayment({
+            ref: server.ref,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+          });
+          if (status === "delivered") cart.updateOrderStatus(server.ref, "delivered");
+          resolve({ order: cart.findOrder(server.ref) ?? server, done: status === "delivered" });
+        },
+        modal: {
+          ondismiss: function () { resolve({ dismissed: true }); },
+        },
+      });
+      rzp.on("payment.failed", function (resp) {
+        toast(resp.error?.description || "Payment failed — you can try again.");
+      });
+      rzp.open();
+    });
   }
 
   async function paint() {
@@ -348,7 +350,7 @@
 
     const total = cart.subtotal();
     const saved = cart.savings();
-    const gateway = await cashfreeIsAvailable();
+    const gateway = await razorpayIsAvailable();
 
     root.innerHTML = `
     <div class="cart-layout">
@@ -371,29 +373,31 @@
           <div class="summary-row"><span>Delivery</span><span>Email · free</span></div>
           <div class="summary-row total"><span>Total</span><span class="price">${money(total)}</span></div>
         </div>
-        ${gateway ? cashfreePanelHTML(total) : qrPanelHTML(total)}
+        ${gateway ? razorpayPanelHTML(total) : qrPanelHTML(total)}
       </aside>
     </div>`;
 
-    root.querySelector("#cashfree-form")?.addEventListener("submit", async (e) => {
+    root.querySelector("#razorpay-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       const form = e.target;
       const email = form.email.value.trim();
 
       const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
-      document.getElementById("field-cf-email").classList.toggle("has-error", !emailOk);
-      if (!emailOk) return document.getElementById("cf-email").focus();
+      document.getElementById("field-rzp-email").classList.toggle("has-error", !emailOk);
+      if (!emailOk) return document.getElementById("rzp-email").focus();
 
       const button = form.querySelector("button[type=submit]");
+      const resetButton = () => { button.disabled = false; button.textContent = `Pay ${money(total)} with Razorpay`; };
       button.disabled = true;
       button.textContent = "Opening payment…";
 
-      const { error } = await submitCashfreeOrder({ email }) ?? {};
+      const { order, done, dismissed, error } = await submitRazorpayOrder({ email }) ?? {};
+
+      if (dismissed) return resetButton();
 
       if (error) {
-        button.disabled = false;
-        button.textContent = `Pay ${money(total)} with Cashfree`;
-        const field = document.getElementById("field-cf-email");
+        resetButton();
+        const field = document.getElementById("field-rzp-email");
         if (error.field === "email" && field) {
           field.classList.add("has-error");
           field.querySelector(".field-error").textContent = error.message;
@@ -402,8 +406,9 @@
         }
         return;
       }
-      // On success the browser is already navigating to Cashfree —
-      // nothing left to render here.
+
+      root.innerHTML = confirmedHTML(order, done ? "gateway" : "gateway-pending");
+      if (done) toast("Payment received");
     });
 
     root.querySelector("#confirm-form")?.addEventListener("submit", async (e) => {
@@ -452,7 +457,7 @@
     paint();
   });
 
-  handleGatewayReturn().then((handled) => { if (!handled) paint(); });
+  paint();
 </script>
 
 </body>

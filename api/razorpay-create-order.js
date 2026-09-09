@@ -1,26 +1,26 @@
 /* ============================================================
-   POST /api/cashfree-create-order
+   POST /api/razorpay-create-order
 
    The buyer's browser posts product ids and an email — no txnId,
-   because payment hasn't happened yet. This prices the order from
-   the catalogue, opens a Cashfree order for it, and only then
-   records our own copy — if Cashfree's side fails, nothing is left
-   behind to clean up.
+   because payment hasn't happened yet. Prices the order from the
+   catalogue, opens a Razorpay order for it, and only then records
+   our own copy — if Razorpay's side fails, nothing is left behind to
+   clean up.
 
-   Deliberate: if either the store or Cashfree is not configured this
-   returns 501 and the page falls back to the manual QR/UPI flow. A
+   Deliberate: if either the store or Razorpay is not configured this
+   returns 501 and the page falls back to the manual QR flow. A
    missing environment variable must never cost someone a checkout.
    ============================================================ */
 
 import { buildPending, OrderError } from "./_lib/order.js";
 import * as store from "./_lib/store.js";
-import * as cashfree from "./_lib/cashfree.js";
+import * as razorpay from "./_lib/razorpay.js";
 import { json, methodIs, body } from "./_lib/http.js";
 
 export default async function handler(req, res) {
   if (!methodIs(req, res, "POST")) return;
 
-  if (!store.isConfigured() || !cashfree.isConfigured()) {
+  if (!store.isConfigured() || !razorpay.isConfigured()) {
     return json(res, 501, {
       error: "Card/UPI checkout is not configured on this deployment.",
       code: "no-gateway",
@@ -37,25 +37,20 @@ export default async function handler(req, res) {
     throw err;
   }
 
-  const proto = req.headers["x-forwarded-proto"] ?? "https";
-  const origin = `${proto}://${req.headers.host}`;
-
-  let session;
+  let gateway;
   try {
-    session = await cashfree.createOrder({
-      orderId: order.ref,
-      amount: order.total,
-      email: order.email,
-      returnUrl: `${origin}/cart.html?order=${order.ref}`,
-      notifyUrl: `${origin}/api/cashfree-webhook`,
-    });
+    gateway = await razorpay.createOrder({ ref: order.ref, amount: order.total });
   } catch (err) {
-    console.error("cashfree create order failed", err);
+    console.error("razorpay create order failed", err);
     return json(res, 502, {
       error: "The payment gateway did not respond. Nothing was charged — try again, or pay by QR below.",
       code: "gateway-failed",
     });
   }
+
+  // Razorpay mints its own order id — persist the mapping so
+  // finalize.js and the webhook can look this order up again later.
+  order.gatewayOrderId = gateway.orderId;
 
   try {
     await store.save(order);
@@ -72,7 +67,8 @@ export default async function handler(req, res) {
     total: order.total,
     items: order.items,
     email: order.email,
-    paymentSessionId: session.paymentSessionId,
-    mode: cashfree.mode(),
+    razorpayOrderId: gateway.orderId,
+    keyId: razorpay.keyId(),
+    mode: razorpay.mode(),
   });
 }

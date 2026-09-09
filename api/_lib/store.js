@@ -89,13 +89,13 @@ export async function probe() {
 
 /**
  * A short-lived mutex, for the one place two different triggers can
- * race to finalize the same Cashfree order (the webhook and the
- * buyer's own return-page poll — see _lib/finalize.js). `SET ... NX`
- * only succeeds if the key does not already exist, so at most one
- * caller gets `true`; everyone else gets `false` and should treat
- * that as "someone else has this" rather than an error. No explicit
- * unlock: the TTL clears it, and by the time it would matter the
- * work is already done either way.
+ * race to finalize the same Razorpay order (the webhook and
+ * /api/razorpay-verify, called from the buyer's own browser — see
+ * _lib/finalize.js). `SET ... NX` only succeeds if the key does not
+ * already exist, so at most one caller gets `true`; everyone else
+ * gets `false` and should treat that as "someone else has this"
+ * rather than an error. No explicit unlock: the TTL clears it, and
+ * by the time it would matter the work is already done either way.
  */
 export async function tryLock(key, ttlSeconds) {
   const result = await redis(["SET", key, "1", "NX", "EX", String(ttlSeconds)]);

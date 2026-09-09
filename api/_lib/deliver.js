@@ -2,7 +2,7 @@
    DELIVERY — resolve each item's file link and email the buyer.
 
    Shared by two triggers: the seller clicking "mark delivered" for
-   a manual QR order, and Cashfree confirming a gateway payment
+   a manual QR order, and Razorpay confirming a gateway payment
    automatically. Both must behave identically, so this is the one
    place that does it.
    ============================================================ */
