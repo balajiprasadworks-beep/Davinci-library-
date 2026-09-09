@@ -4,9 +4,11 @@
   "type": "module",
   "description": "Storefront for DaVinci's Medical Library. The site itself is static; /api holds the serverless functions that record orders.",
   "dependencies": {
-    "@vercel/blob": "latest"
+    "@vercel/blob": "latest",
+    "razorpay": "^2.9.8"
   },
   "devDependencies": {
-    "playwright": "^1.49.0"
+    "playwright": "^1.49.0",
+    "nock": "^14.0.17"
   }
 }

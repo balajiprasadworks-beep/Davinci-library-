@@ -121,8 +121,9 @@ export function findOrder(ref) {
   return orders().find((o) => o.ref === ref) ?? null;
 }
 
-/** Used after a Cashfree redirect confirms (or is still confirming) a
- *  payment, so the buyer's own dashboard reflects it without a refetch. */
+/** Used once Razorpay Checkout's handler function reports success and
+ *  the server confirms it, so the buyer's own dashboard reflects the
+ *  payment without a refetch. */
 export function updateOrderStatus(ref, status) {
   write(ORDERS_KEY, orders().map((o) => (o.ref === ref ? { ...o, status } : o)));
 }

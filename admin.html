@@ -49,8 +49,10 @@
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}`, ...options.headers },
     });
 
+  const GATEWAY_LABEL = { razorpay: "Razorpay" };
+
   const STATUS_LABEL = {
-    "awaiting-payment": "Awaiting payment (Cashfree)",
+    "awaiting-payment": "Awaiting payment",
     "awaiting-payment-check": "Awaiting payment check",
     delivered: "Delivered",
     refunded: "Refunded",
@@ -102,9 +104,10 @@
         <li><code>RESEND_API_KEY</code> — ${tick(h.mail.RESEND_API_KEY)}</li>
         <li><code>SELLER_EMAIL</code> — ${tick(h.mail.SELLER_EMAIL)}</li>
         <li><code>MAIL_FROM</code> — ${tick(h.mail.MAIL_FROM)} <span class="sub">(optional)</span></li>
-        <li><code>CASHFREE_APP_ID</code> — ${tick(h.cashfree.CASHFREE_APP_ID)} <span class="sub">(optional — card/UPI checkout)</span></li>
-        <li><code>CASHFREE_SECRET_KEY</code> — ${tick(h.cashfree.CASHFREE_SECRET_KEY)} <span class="sub">(optional)</span></li>
-        ${h.cashfree.configured ? `<li><span class="sub">Cashfree mode: <strong>${esc(h.cashfree.mode)}</strong></span></li>` : ""}
+        <li><code>RAZORPAY_KEY_ID</code> — ${tick(h.razorpay.RAZORPAY_KEY_ID)} <span class="sub">(optional — card/UPI checkout)</span></li>
+        <li><code>RAZORPAY_KEY_SECRET</code> — ${tick(h.razorpay.RAZORPAY_KEY_SECRET)} <span class="sub">(optional)</span></li>
+        <li><code>RAZORPAY_WEBHOOK_SECRET</code> — ${tick(h.razorpay.RAZORPAY_WEBHOOK_SECRET)} <span class="sub">(optional — lets the webhook confirm payments; /api/razorpay-verify covers most of it without this)</span></li>
+        ${h.razorpay.configured ? `<li><span class="sub">Razorpay mode: <strong>${esc(h.razorpay.mode)}</strong></span></li>` : ""}
       </ul>
       ${rt ? `<p class="panel-note">Live database check: ${rt.ok
         ? `<span style="color:var(--ok)">reachable in ${rt.ms} ms</span>`
@@ -132,11 +135,11 @@
 
   function orderHTML(o) {
     const outstanding = o.status === "awaiting-payment-check" || o.status === "awaiting-payment";
-    const gateway = o.provider === "cashfree";
+    const gatewayLabel = GATEWAY_LABEL[o.provider];
     return `
     <div class="cart-line order-line">
       <div class="cart-line-body">
-        <h4>${esc(o.ref)} · ${money(o.total)}${gateway ? ` <span class="sub">· Cashfree</span>` : ""}</h4>
+        <h4>${esc(o.ref)} · ${money(o.total)}${gatewayLabel ? ` <span class="sub">· ${gatewayLabel}</span>` : ""}</h4>
         <span class="sub">
           ${new Date(o.placedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
           · ${esc(STATUS_LABEL[o.status] ?? o.status)}
@@ -149,7 +152,7 @@
           ${o.txnId ? `· UPI ref <strong>${esc(o.txnId)}</strong>` : ""}
         </p>
         ${o.status === "awaiting-payment"
-          ? `<p class="panel-note u-mt-sm" style="margin-bottom:0">Cashfree normally confirms this on its own within moments. Only use "Mark delivered" below if it has been sitting here a while — check the order in your Cashfree dashboard first.</p>`
+          ? `<p class="panel-note u-mt-sm" style="margin-bottom:0">${gatewayLabel ?? "The gateway"} normally confirms this on its own within moments. Only use "Mark delivered" below if it has been sitting here a while — check the order in your ${gatewayLabel ?? "gateway"} dashboard first.</p>`
           : ""}
       </div>
       ${outstanding

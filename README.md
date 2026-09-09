@@ -3,7 +3,7 @@
 A 3D interactive storefront for medical notes — MBBS year-wise, internship
 practical guides, and preparation for exams abroad.
 
-Static pages with no build step and no framework, plus three optional
+Static pages with no build step and no framework, plus a set of optional
 serverless functions that record orders. Open it, edit it, push it.
 
 ---
@@ -141,9 +141,9 @@ breaks. The test suite covers every path.
 | Route | Who | What |
 | --- | --- | --- |
 | `POST /api/order` | buyer | Manual QR/UPI path: prices the order, stores it, emails you and the buyer |
-| `POST /api/cashfree-create-order` | buyer | Gateway path: prices the order, opens a Cashfree checkout session |
-| `POST /api/cashfree-webhook` | Cashfree | Confirms a payment and triggers delivery automatically — see **Real payment gateway** below |
-| `GET /api/order-lookup?ref=` | buyer | Minimal status check (ref + status only) for the page a buyer lands back on after paying |
+| `POST /api/razorpay-create-order` | buyer | Gateway path: prices the order, opens a Razorpay order for Standard Checkout |
+| `POST /api/razorpay-verify` | buyer | Confirms the payment Checkout's handler function just reported and triggers delivery — see **Real payment gateway** below |
+| `POST /api/razorpay-webhook` | Razorpay | Backstop that confirms and delivers a payment if the buyer's browser never gets to call `/api/razorpay-verify` |
 | `GET /api/orders` | you | The order book behind `ADMIN_TOKEN` |
 | `POST /api/order-status` | you | Mark delivered / refunded / cancelled |
 | `GET /api/health` | anyone | Which variables landed. Booleans only, never values. With an admin token it also round-trips the database. |
@@ -173,8 +173,8 @@ In Vercel, **Settings → Environment Variables**, then redeploy:
 | `ADMIN_TOKEN` | Any long random string. Opens `/admin.html`. Unset means the admin API is off, not open. |
 | `RESEND_API_KEY`, `SELLER_EMAIL`, `MAIL_FROM` | So a new order emails you. Optional — a failed email never fails an order. |
 | `BLOB_READ_WRITE_TOKEN` | Lets "Mark delivered" auto-attach a download link. See **Automatic file delivery** below — Vercel sets this for you when you connect a **private** Blob store, nothing to type in. |
-| `CASHFREE_APP_ID`, `CASHFREE_SECRET_KEY` | Turns on real card/UPI checkout through Cashfree. See **Real payment gateway** below. Without these, checkout stays on the manual QR flow. |
-| `CASHFREE_ENV` | `PRODUCTION` to take real payments. Anything else, including unset, means sandbox — test money only. Deliberately not defaulting to production: a typo here fails toward "no real charges." |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | Turns on real card/UPI/netbanking checkout through Razorpay Standard Checkout. See **Real payment gateway** below. Without these, checkout stays on the manual QR flow. Which mode you're in (test vs live) is decided by which key pair this is — no separate switch to get wrong. |
+| `RAZORPAY_WEBHOOK_SECRET` | The secret you choose when creating the webhook in the Razorpay dashboard. Optional in the sense that checkout still works without it — `/api/razorpay-verify` (fired from the buyer's own browser) confirms most payments on its own — but it's what finalizes an order if the buyer closes the tab before that call fires. |
 
 One honest caveat on email: Resend only delivers to arbitrary addresses once
 you verify a sending domain. Until then `MAIL_FROM` must be
@@ -194,28 +194,29 @@ which name is wrong instead of guessing from a failing checkout. Or hit
 node tools/check-api.mjs
 ```
 
-46 tests, no server and (for these paths) no real network — Redis, Resend and
-Cashfree are all stubbed via `fetch` (Cashfree's REST API is called with a
-plain `fetch`, same as the others, specifically so it stays testable this
-way — see the note in `_lib/cashfree.js`). Covers server-side pricing, that a
-client-supplied total is ignored, validation, admin auth, that marking an
-order delivered emails the buyer exactly once, that the delivery email
-correctly links a title's file (or falls back gracefully when nothing
-presigns — a missing `blobPath`, or a slow/failing call to Vercel's Blob API,
-both leave the "delivered" transition and the email itself unharmed), that a
-Cashfree webhook with a bad signature is refused and does nothing, that a
-verified one finalizes and delivers exactly once even if Cashfree retries
-it, that a buyer's own return-page poll finalizes a paid order even when the
-webhook never arrives at all, and that a webhook and that poll landing at
-the exact same moment — a genuine race, not a retry — still only deliver
-once.
+46 tests, no server and no real network. Redis and Resend are stubbed via
+`globalThis.fetch`. Razorpay is different: its official SDK talks over axios,
+not `fetch`, so it's stubbed at the HTTP layer instead with
+[nock](https://github.com/nock/nock) (a dev dependency) — see the note in
+`_lib/razorpay.js` and `tools/check-api.mjs`. Covers server-side pricing,
+that a client-supplied total is ignored, validation, admin auth, that
+marking an order delivered emails the buyer exactly once, that the delivery
+email correctly links a title's file (or falls back gracefully when nothing
+presigns — a missing `blobPath`, or a slow/failing call to Vercel's Blob
+API, both leave the "delivered" transition and the email itself unharmed),
+that a Razorpay payment signature that doesn't verify — or verifies but was
+replayed from a *different* order — never finalizes anything, that a
+Razorpay webhook with a bad signature is refused and does nothing, that a
+verified webhook or verify call finalizes and delivers exactly once even if
+retried, and that a webhook and a verify call landing at the exact same
+moment — a genuine race, not a retry — still only deliver once.
 
 ---
 
 ## How the money flows
 
 Two paths, and the buyer only ever sees one of them — whichever the
-environment variables say is available. Without Cashfree configured,
+environment variables say is available. Without Razorpay configured,
 checkout is deliberately manual, which is what works for a solo seller with
 no payment gateway at all:
 
@@ -238,7 +239,7 @@ send you. Without it, they have to email the reference themselves.
 
 Orders are stored in the buyer's own browser so they can see their history on
 the dashboard. **You** are the system of record on the manual path — check
-your bank, then deliver. On the Cashfree path below, Cashfree is the system
+your bank, then deliver. On the Razorpay path below, Razorpay is the system
 of record, and delivery happens on its own.
 
 ### Automatic file delivery
@@ -299,11 +300,11 @@ whenever the order book loads, and `/api/health` reports `fileDelivery` —
 whether the token is set and how many titles have a `blobPath`, as booleans
 and counts only, never the token or a URL.
 
-### Real payment gateway (Cashfree)
+### Real payment gateway (Razorpay)
 
-With `CASHFREE_APP_ID` and `CASHFREE_SECRET_KEY` set, checkout replaces the
+With `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` set, checkout replaces the
 QR/manual-reference flow above with a real one: the buyer pays through
-Cashfree's own hosted checkout (UPI, cards, netbanking), and delivery
+Razorpay Standard Checkout (UPI, cards, netbanking, wallets), and delivery
 happens on its own — no bank statement to check, no "mark delivered" click.
 
 **How it actually flows:**
@@ -311,67 +312,73 @@ happens on its own — no bank statement to check, no "mark delivered" click.
 1. Buyer enters an email and clicks "Pay" — no transaction ID, because
    payment hasn't happened yet.
 2. The server prices the order from the catalogue (same as the manual path,
-   same tamper-proof reasoning), opens a Cashfree order for it, and only
-   *then* records its own copy — if Cashfree's side fails, nothing is left
+   same tamper-proof reasoning), opens a Razorpay order for it, and only
+   *then* records its own copy — if Razorpay's side fails, nothing is left
    behind to clean up.
-3. The buyer is sent to Cashfree's checkout to actually pay.
-4. Cashfree redirects them back to `cart.html?order=DV-XXXXXX` and, in
-   parallel, sends a webhook to `/api/cashfree-webhook`.
-5. Either one — usually both — triggers the same finalize step: **re-ask
-   Cashfree directly**, with our own credentials, whether that order is
-   really `PAID`. The webhook's signature is checked first, but it's a
-   courtesy, not the security boundary — nothing here ever marks an order
-   paid on a webhook body's say-so alone, only on what Cashfree's own API
-   confirms when asked again.
+3. Standard Checkout opens as a modal right there on `cart.html` — unlike a
+   hosted-checkout redirect, the buyer never leaves the page.
+4. On success, Checkout's own handler function reports
+   `{razorpay_order_id, razorpay_payment_id, razorpay_signature}` straight
+   to the page's script, which posts it to `/api/razorpay-verify`.
+5. The server checks that triple two ways before trusting it: the
+   `razorpay_order_id` must match the one this order actually opened with
+   Razorpay (otherwise a valid signature from a *different*, already-paid
+   order could be replayed here), and the signature itself must verify
+   against `RAZORPAY_KEY_SECRET`. Neither check is the security boundary on
+   its own, though — **the order is only ever marked paid after re-asking
+   Razorpay's Orders API directly**, with our own credentials, whether it
+   really is `paid`.
 6. Once confirmed, the order is marked delivered and the buyer is emailed —
    the exact same delivery step (`_lib/deliver.js`) the manual "mark
    delivered" button uses, presigned Blob links included where a title has
-   one.
+   one. The buyer sees this resolve in the same request, no polling.
 
-**Why both a webhook and a poll**: a webhook can be slow, dropped, or land
-before the buyer's browser is even back on the page. The buyer's own return
-trip to `cart.html` polls `/api/order-lookup`, which performs the exact same
-Cashfree-confirms-it-first finalize check as a backstop — in practice this
-is usually what actually resolves the order, not the webhook. If somehow
-neither happens (the buyer closes the tab mid-payment and the webhook is
-also lost), the order sits as `awaiting-payment` and shows up in
+**Why there's also a webhook**: `/api/razorpay-verify` only fires if the
+buyer's browser is still there when Checkout's handler runs — closing the
+tab mid-payment, a JS error, or an ad blocker can all lose it. Subscribing
+`/api/razorpay-webhook` to Razorpay's `order.paid` event (Razorpay dashboard
+→ **Settings → Webhooks**) is the backstop: it performs the exact same
+re-ask-Razorpay-directly finalize check independently. If somehow neither
+ever fires, the order sits as `awaiting-payment` and shows up in
 `/admin.html`'s order book with the ordinary "Mark delivered" button as a
 manual last resort.
 
 Having two independent triggers for the same finalize step means they can
 land within moments of each other, sometimes closer together than one
-Cashfree API round trip — a short-lived lock in Redis (`store.tryLock`)
+Razorpay API round trip — a short-lived lock in Redis (`store.tryLock`)
 makes sure only one of them actually delivers; the other backs off rather
 than emailing the buyer a second time. Tested with a genuine concurrent
 race, not just a sequential retry.
 
 **One-time setup:**
 
-1. Create a Cashfree Payments merchant account and, from the dashboard,
-   generate an API key pair (App ID + Secret Key). Start in **Test Mode** —
-   sandbox credentials, no real money — until you're ready to go live.
-2. Add `CASHFREE_APP_ID` and `CASHFREE_SECRET_KEY` in Vercel
+1. Create a Razorpay account and, from the dashboard (**Account & Settings →
+   API Keys**), generate a key pair. Start with **Test Mode** keys (they
+   start `rzp_test_`) — no real money — until you're ready to go live.
+2. Add `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` in Vercel
    (**Settings → Environment Variables**), then redeploy.
-3. That's it for sandbox. To take real payments, switch the dashboard to
-   **Live Mode** for a second key pair, update the two variables, and set
-   `CASHFREE_ENV=PRODUCTION`. Leaving `CASHFREE_ENV` unset — even with live
-   keys sitting in the other two variables — keeps requests on Cashfree's
-   sandbox, so a half-finished setup fails toward "no real charges," not
-   the other way round.
-
-Nothing to configure for the webhook URL by hand: `/api/cashfree-create-order`
-tells Cashfree where to send it (`https://<your-domain>/api/cashfree-webhook`)
-on every order it opens.
+3. In the Razorpay dashboard, **Settings → Webhooks → Add New Webhook**:
+   set the URL to `https://<your-domain>/api/razorpay-webhook`, subscribe to
+   the **`order.paid`** event only, and choose a secret. Add that same value
+   as `RAZORPAY_WEBHOOK_SECRET` in Vercel and redeploy. Checkout works
+   without this step — `/api/razorpay-verify` covers most payments on its
+   own — but skipping it means a buyer who closes the tab mid-payment has
+   no automatic backstop.
+4. That's it for test mode. To take real payments, switch the Razorpay
+   dashboard to **Live Mode**, generate a **Live** key pair (they start
+   `rzp_live_`), and swap `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` to those —
+   there's no separate mode flag to remember, since which mode you're in is
+   read directly from the key prefix.
 
 **The one deliberate exception to "no third-party requests"** (see below):
-Cashfree's checkout script (`sdk.cashfree.com`) is loaded, but only on
-`cart.html`, only once a buyer actually clicks "Pay," and only when Cashfree
+Razorpay's checkout script (`checkout.razorpay.com`) is loaded, but only on
+`cart.html`, only once a buyer actually clicks "Pay," and only when Razorpay
 is configured at all. A payment processor's live checkout — PCI compliance,
-3-D Secure redirects, real UPI intents — cannot be self-hosted the way a
-font or a JS framework can; every other page on the site stays exactly as
-untouched as it always was. `tools/check.mjs`'s zero-external-hosts
-assertion still passes as-is: Cashfree is never configured in the test
-environment, so the script is never requested during the test run.
+3-D Secure, real UPI intents — cannot be self-hosted the way a font or a JS
+framework can; every other page on the site stays exactly as untouched as it
+always was. `tools/check.mjs`'s zero-external-hosts assertion still passes
+as-is: Razorpay is never configured in the test environment, so the script
+is never requested during the test run.
 
 ---
 
@@ -425,11 +432,11 @@ from your buyers, which is what the privacy section promises; and there is no
 outage but your own. `tools/check.mjs` asserts it, failing the build if any
 external host creeps back in.
 
-**One deliberate exception, only if you turn it on**: Cashfree's checkout
+**One deliberate exception, only if you turn it on**: Razorpay's checkout
 script, loaded only on the cart page and only at the moment a buyer pays —
 see **Real payment gateway** above. A payment processor's own live checkout
 infrastructure is not something a font or a JS framework's substitute
-(self-hosting a copy) can stand in for. It never loads with Cashfree
+(self-hosting a copy) can stand in for. It never loads with Razorpay
 unconfigured, which is the state `tools/check.mjs` runs in.
 
 ## Checks
