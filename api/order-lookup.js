@@ -22,7 +22,7 @@
    ============================================================ */
 
 import * as db from "./_lib/db.js";
-import * as r2 from "./_lib/r2.js";
+import * as blob from "./_lib/blob.js";
 import { PRODUCTS } from "../js/catalog.js";
 import { json, methodIs } from "./_lib/http.js";
 
@@ -59,11 +59,11 @@ export default async function handler(req, res) {
   const items = await Promise.all(order.items.map(async (item) => {
     if (!delivered) return { id: item.id, title: item.title, price: item.price };
 
-    const key = PRODUCTS.find((p) => p.id === item.id)?.r2Key;
+    const path = PRODUCTS.find((p) => p.id === item.id)?.blobPath;
     let fileUrl = null;
-    if (key) {
+    if (path) {
       try {
-        fileUrl = await r2.presignDownload(key, { filename: `${item.title}.pdf` });
+        fileUrl = await blob.presignDownload(path);
       } catch (err) {
         console.warn(`order-lookup: could not presign a link for ${item.id}:`, err);
       }

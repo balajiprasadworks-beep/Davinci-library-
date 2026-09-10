@@ -9,14 +9,14 @@
    whatever the order was last delivered with.
    ============================================================ */
 
-import * as r2 from "./r2.js";
+import * as blob from "./blob.js";
 import * as mail from "./mail.js";
 import { PRODUCTS } from "../../js/catalog.js";
 
 /**
- * Presign a download link for every item that has an r2Key, and
+ * Presign a download link for every item that has a blobPath, and
  * email the buyer + seller. Best-effort on both: a title with no
- * r2Key, or a presign call that fails, is listed as "sending
+ * blobPath, or a presign call that fails, is listed as "sending
  * separately" rather than blocking the rest of the order, and a mail
  * failure never blocks the caller's DB write, since losing the
  * record of a confirmed sale is far worse than a missed notification.
@@ -26,10 +26,10 @@ import { PRODUCTS } from "../../js/catalog.js";
  */
 export async function deliver(order) {
   const resolvedItems = await Promise.all(order.items.map(async (item) => {
-    const key = PRODUCTS.find((p) => p.id === item.id)?.r2Key;
-    if (!key) return item;
+    const path = PRODUCTS.find((p) => p.id === item.id)?.blobPath;
+    if (!path) return item;
     try {
-      const fileUrl = await r2.presignDownload(key, { filename: `${item.title}.pdf` });
+      const fileUrl = await blob.presignDownload(path);
       return { ...item, fileUrl };
     } catch (err) {
       console.warn(`could not presign a link for ${item.id}:`, err);

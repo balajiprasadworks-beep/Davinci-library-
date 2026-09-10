@@ -192,16 +192,14 @@
           <p class="eyebrow">File delivery not set up</p>
           <p class="panel-note">
             Payment and orders can still work, but nobody gets a download
-            link yet. Create a PRIVATE Cloudflare R2 bucket
-            (<strong>R2 → Create bucket</strong>, then
-            <strong>Manage API Tokens</strong> for a scoped key), set
-            <code>R2_ACCOUNT_ID</code>, <code>R2_ACCESS_KEY_ID</code>,
-            <code>R2_SECRET_ACCESS_KEY</code> and <code>R2_BUCKET</code> in
-            Vercel, then run <code>tools/upload-note.mjs</code> for each PDF
-            and paste the key it prints into that title's <code>r2Key</code>
-            in <code>js/catalog.js</code>. The site signs a fresh, expiring
-            download link from that key automatically the instant a payment
-            is confirmed.
+            link yet. Connect a PRIVATE Vercel Blob store
+            (<strong>Storage → Create Database → Blob</strong> in your
+            Vercel dashboard — this sets <code>BLOB_READ_WRITE_TOKEN</code>
+            for you), then run <code>tools/upload-note.mjs</code> for each
+            PDF and paste the pathname it prints into that title's
+            <code>blobPath</code> in <code>js/catalog.js</code>. The site
+            signs a fresh, expiring download link from that pathname
+            automatically the instant a payment is confirmed.
           </p>
         </div>`;
     } else if (fd.titlesLinked === 0) {
@@ -209,9 +207,9 @@
         <div class="glass u-pad-sm u-mt-md">
           <p class="eyebrow">File delivery ready, nothing uploaded yet</p>
           <p class="panel-note">
-            R2 is connected but no title has an <code>r2Key</code> — run
-            <code>tools/upload-note.mjs</code> for a PDF and paste the key it
-            prints into <code>js/catalog.js</code>.
+            Storage is connected but no title has a <code>blobPath</code> —
+            run <code>tools/upload-note.mjs</code> for a PDF and paste the
+            pathname it prints into <code>js/catalog.js</code>.
           </p>
         </div>`;
     } else {

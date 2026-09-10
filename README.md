@@ -45,7 +45,7 @@ the top row, **View Cart** (with a live count) and **Profile** below it.
 ### 1. Your payment, database and file storage accounts
 
 There is no QR code any more — payment runs through **Razorpay**, orders are
-recorded in **Neon**, and files are stored in **Cloudflare R2**. All three
+recorded in **Neon**, and files are stored in **Vercel Blob**. All three
 need a one-time account setup before checkout works at all; see
 **The backend** below for exactly what to create and which environment
 variables to set. `js/config.js` itself only holds the buyer-facing checkout
@@ -70,7 +70,7 @@ export const SITE = {
 
 ### 3. Adding a note — `js/catalog.js`
 
-Add one object — leave `status: "soon"` and `r2Key` off until the PDF is
+Add one object — leave `status: "soon"` and `blobPath` off until the PDF is
 actually uploaded (see **Automatic file delivery** below):
 
 ```js
@@ -116,7 +116,7 @@ gate is enforced in three places rather than one.
 
 This repository is public and the site is served as static files. A PDF
 committed to git is downloadable by anyone who guesses the URL — buying it
-becomes optional. Keep the files out of git entirely; use `r2Key` and
+becomes optional. Keep the files out of git entirely; use `blobPath` and
 **Automatic file delivery** below instead.
 
 That's the whole workflow. The card, the filters, the cart and the anatomy
@@ -175,11 +175,11 @@ variables in Vercel (**Settings → Environment Variables**, then redeploy):
 `db/schema.sql` once (Neon's SQL editor, or `psql "$DATABASE_URL" -f
 db/schema.sql`) → copy the connection string as `DATABASE_URL`.
 
-**3. Cloudflare R2** — Cloudflare dashboard → R2 → create a **private**
-bucket → Manage API Tokens → create a token scoped to it → `R2_ACCOUNT_ID`
-(R2 Overview page), `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
-See **Automatic file delivery** below for uploading the actual PDFs once this
-is done.
+**3. Vercel Blob** — in the Vercel dashboard: **Storage → Create Database →
+Blob → Connect**, choosing a **Private** store. This adds
+`BLOB_READ_WRITE_TOKEN` to your environment variables itself — nothing to
+copy by hand. See **Automatic file delivery** below for uploading the actual
+PDFs once this is done.
 
 | Variable | Why |
 | --- | --- |
@@ -188,7 +188,7 @@ is done.
 | `RAZORPAY_WEBHOOK_SECRET` | Verifies the webhook is really from Razorpay. Without it, delivery never triggers even if payment succeeds. |
 | `ADMIN_TOKEN` | Any long random string. Opens `/admin.html`. Unset means the admin API is off, not open. |
 | `RESEND_API_KEY`, `SELLER_EMAIL`, `MAIL_FROM` | So orders email you and the buyer. Optional in the sense that a failed send never blocks a sale — but with no `RESEND_API_KEY`, a buyer gets no receipt at all beyond the download button shown on `order.html` itself. |
-| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | Lets a confirmed payment auto-attach a download link. See **Automatic file delivery** below. |
+| `BLOB_READ_WRITE_TOKEN` | Lets a confirmed payment auto-attach a download link. See **Automatic file delivery** below. |
 
 One honest caveat on email: Resend only delivers to arbitrary addresses once
 you verify a sending domain. Until then `MAIL_FROM` must be
@@ -216,12 +216,12 @@ node tools/check-api.mjs
 
 36 tests, no server and no live credentials — Resend is stubbed via `fetch`,
 and `order.build()`'s pricing/validation and the webhook's signature
-verification are pure functions tested directly. Neon and R2 use their own
-SDKs rather than raw `fetch`, so they are not stubbed; instead these checks
-prove that an unconfigured deployment fails with a clear 501 rather than
-crashing, and — the one that matters most — that the webhook verifies its
-signature **before** touching the database at all, so a forged request never
-reaches Neon or R2 no matter what is or isn't configured.
+verification are pure functions tested directly. Neon and Vercel Blob use
+their own SDKs rather than raw `fetch`, so they are not stubbed; instead
+these checks prove that an unconfigured deployment fails with a clear 501
+rather than crashing, and — the one that matters most — that the webhook
+verifies its signature **before** touching the database at all, so a forged
+request never reaches Neon or Blob no matter what is or isn't configured.
 
 ---
 
@@ -239,8 +239,8 @@ Fully automatic, with no seller interaction:
    is verified against `RAZORPAY_WEBHOOK_SECRET`, and nothing the buyer's
    browser reports is ever trusted on its own.
 5. Once verified, the order moves to `paid` in Neon, a fresh expiring
-   download link is presigned from R2 for each title, and the buyer is
-   emailed automatically.
+   download link is presigned from the private Blob store for each title,
+   and the buyer is emailed automatically.
 6. `order.html` polls for that same result and shows the download button
    directly on the page — the buyer doesn't have to wait on email at all.
 
@@ -250,19 +250,20 @@ it on** above for what needs to be configured before any of this can run.
 
 ### Automatic file delivery
 
-Once a title has an `r2Key`, step 5 above finds the file with nothing more
+Once a title has a `blobPath`, step 5 above finds the file with nothing more
 from you — no attaching a PDF, no separate email.
 
-**Why R2, not Google Drive or the git repo**: the backend has no Google
-credentials, and wiring OAuth just to fetch one file is a project of its
-own. It also isn't the git repo — see "Never commit a paid PDF" above; a
-public repo has no private folder. [Cloudflare R2](https://developers.cloudflare.com/r2/)
-is S3-compatible object storage with a generous free tier and no egress fees.
+**Why Vercel Blob, not Google Drive or the git repo**: the backend has no
+Google credentials, and wiring OAuth just to fetch one file is a project of
+its own. It also isn't the git repo — see "Never commit a paid PDF" above; a
+public repo has no private folder. [Vercel Blob](https://vercel.com/docs/storage/vercel-blob)
+is one token, already scoped to this project, with no separate account or
+OAuth flow to set up.
 
-**Private bucket, not public.** A public bucket hands out a bare URL that
+**Private store, not public.** A public Blob store hands out a bare URL that
 works forever for anyone who has it — fine for images, not for something
-someone paid ₹199 for. This project uses a **private** bucket instead: a bare
-object URL there needs a signature no buyer's browser can produce on its own,
+someone paid ₹199 for. This project uses a **private** store instead: a bare
+blob URL there needs an `Authorization` header no buyer's browser can send,
 so there is no permanent link to leak in the first place. Instead, the
 backend generates a **presigned URL** — a link carrying its own signature
 and up to a 7-day expiry (the hard ceiling for this kind of link, not a
@@ -274,31 +275,30 @@ file without re-uploading anything.
 **Per note:**
 
 ```bash
-R2_ACCOUNT_ID=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_BUCKET=... \
-  node tools/upload-note.mjs "notebook.pdf" abroad-amc1-mental-health
+BLOB_READ_WRITE_TOKEN=... node tools/upload-note.mjs "notebook.pdf" abroad-amc1-mental-health
 ```
 
-It prints an **object key** — not a working link by itself, since the bucket
-is private. Paste it into that title's entry in `js/catalog.js`:
+It prints a **pathname** — not a working link by itself, since the store is
+private. Paste it into that title's entry in `js/catalog.js`:
 
 ```js
-r2Key: "notes/abc123-notebook.pdf",
+blobPath: "notebook-abc123.pdf",
 ```
 
 Push. The next confirmed payment for that title signs a fresh link on the
 spot — for every order of it, past or future, since it's resolved from the
 catalogue at delivery time, not stored with the order.
 
-**If R2 is slow or unreachable** when a link is being signed, that one
-title's link is skipped rather than left hanging — the order still gets
-marked delivered and the buyer still gets emailed, just with that title
+**If Vercel's Blob API is slow or unreachable** when a link is being signed,
+that one title's link is skipped rather than left hanging — the order still
+gets marked delivered and the buyer still gets emailed, just with that title
 listed as "sending separately." Nothing about a shaky network connection can
 block a sale from closing out.
 
 **Checking it's wired up**: `/admin.html` shows a "File delivery" status line
 whenever the order book loads, and `/api/health` reports `fileDelivery` —
-whether R2 is configured and how many titles have an `r2Key`, as booleans
-and counts only, never the credentials or a URL.
+whether the token is set and how many titles have a `blobPath`, as booleans
+and counts only, never the token or a URL.
 
 ---
 
@@ -354,7 +354,7 @@ into ordinary browsing.
 
 Checkout is the one deliberate exception — paying necessarily sends the
 buyer to Razorpay's own page, and the webhook/database/storage calls behind
-delivery talk to Razorpay, Neon, Cloudflare R2 and Resend. `legal.html`
+delivery talk to Razorpay, Neon, Vercel Blob and Resend. `legal.html`
 names all four and what each one actually receives.
 
 ## Checks
@@ -440,5 +440,5 @@ your input:
 Cart and profile live in the buyer's `localStorage` and never leave their
 browser. No analytics, no trackers, and no third-party requests while
 browsing — see above. Checkout itself necessarily involves Razorpay, Neon,
-Cloudflare R2 and Resend; `legal.html` is explicit about what each receives
+Vercel Blob and Resend; `legal.html` is explicit about what each receives
 and does not receive.

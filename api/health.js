@@ -16,7 +16,7 @@
    ============================================================ */
 
 import * as db from "./_lib/db.js";
-import * as r2 from "./_lib/r2.js";
+import * as blob from "./_lib/blob.js";
 import * as razorpay from "./_lib/razorpay.js";
 import { canSend, seller } from "./_lib/mail.js";
 import { PRODUCTS } from "../js/catalog.js";
@@ -50,14 +50,11 @@ export default async function handler(req, res) {
       tokenAccepted: isAdmin(req),
     },
     fileDelivery: {
-      configured: r2.isConfigured(),
-      R2_ACCOUNT_ID: env("R2_ACCOUNT_ID"),
-      R2_ACCESS_KEY_ID: env("R2_ACCESS_KEY_ID"),
-      R2_SECRET_ACCESS_KEY: env("R2_SECRET_ACCESS_KEY"),
-      R2_BUCKET: env("R2_BUCKET"),
-      // How many catalogue titles actually have an r2Key yet — the
-      // bucket being connected doesn't mean anything has been uploaded.
-      titlesLinked: PRODUCTS.filter((p) => p.r2Key).length,
+      configured: blob.isConfigured(),
+      BLOB_READ_WRITE_TOKEN: env("BLOB_READ_WRITE_TOKEN"),
+      // How many catalogue titles actually have a blobPath yet — the
+      // store being connected doesn't mean anything has been uploaded.
+      titlesLinked: PRODUCTS.filter((p) => p.blobPath).length,
       titlesTotal: PRODUCTS.length,
     },
   };

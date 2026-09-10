@@ -6,13 +6,13 @@
  * What this can and can't cover: order.build() (pricing/validation) and
  * razorpay.verifyWebhookSignature() are pure functions, fully tested here.
  * mail.js talks to Resend over plain fetch, so it's stubbed the same way
- * the old Redis-backed suite stubbed Upstash. Neon (db.js) and R2 (r2.js)
- * use their own SDKs rather than raw fetch, so their network calls are
- * NOT stubbed here — instead, the handler tests below check what's true
- * regardless of credentials: an unconfigured deployment fails with a
- * clear 501 rather than crashing, and the webhook verifies its signature
- * BEFORE touching the database at all, so a forged request never reaches
- * Neon or R2 no matter what is or isn't configured. The actual pay ->
+ * the old Redis-backed suite stubbed Upstash. Neon (db.js) and Vercel Blob
+ * (blob.js) use their own SDKs rather than raw fetch, so their network
+ * calls are NOT stubbed here — instead, the handler tests below check
+ * what's true regardless of credentials: an unconfigured deployment fails
+ * with a clear 501 rather than crashing, and the webhook verifies its
+ * signature BEFORE touching the database at all, so a forged request never
+ * reaches Neon or Blob no matter what is or isn't configured. The actual pay ->
  * webhook -> deliver loop needs a real end-to-end check against Razorpay
  * test mode; see the README.
  *
@@ -57,8 +57,9 @@ function mockRawReq(bodyBuffer, headers = {}) {
   return req;
 }
 
-/* Stand in for Resend only — db.js/r2.js talk to Neon/R2 via their own
-   SDKs, not raw fetch, so they are deliberately not exercised here. */
+/* Stand in for Resend only — db.js/blob.js talk to Neon/Vercel Blob via
+   their own SDKs, not raw fetch, so they are deliberately not exercised
+   here. */
 function stubMailFetch() {
   const sent = [];
   globalThis.fetch = async (url, init) => {
@@ -302,11 +303,11 @@ process.env.SELLER_EMAIL = "seller@example.com";
 await test("delivered email links straight to the file when fileUrl is present", async () => {
   const { sent } = stubMailFetch();
   const order = { ref: "DV-TEST01", email: "student@example.com", total: 199, items: [] };
-  await mail.deliveredToBuyer(order, [{ title: "Gastroenterology — AMC 1", price: 199, fileUrl: "https://example.r2.dev/gastro-abc123.pdf" }]);
+  await mail.deliveredToBuyer(order, [{ title: "Gastroenterology — AMC 1", price: 199, fileUrl: "https://example.public.blob.vercel-storage.com/gastro-abc123.pdf" }]);
   assert.equal(sent.length, 1);
   const text = sent[0].text;
   assert.match(text, /ready to download/);
-  assert.match(text, /https:\/\/example\.r2\.dev\/gastro-abc123\.pdf/);
+  assert.match(text, /https:\/\/example\.public\.blob\.vercel-storage\.com\/gastro-abc123\.pdf/);
   assert.doesNotMatch(text, /Sending separately/);
 });
 
@@ -324,7 +325,7 @@ await test("a mixed order lists linked and not-yet-linked titles separately", as
   const { sent } = stubMailFetch();
   const order = { ref: "DV-TEST03", email: "student@example.com", total: 2, items: [] };
   await mail.deliveredToBuyer(order, [
-    { title: "Has A Link", price: 1, fileUrl: "https://example.r2.dev/x.pdf" },
+    { title: "Has A Link", price: 1, fileUrl: "https://example.public.blob.vercel-storage.com/x.pdf" },
     { title: "No Link Yet", price: 1 },
   ]);
   const text = sent[0].text;
@@ -356,8 +357,7 @@ await test("mail degrades to sent:false, never throws, with no API key", async (
 await test("health reports everything unconfigured, honestly", async () => {
   const restore = withoutEnv(
     "DATABASE_URL", "RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET",
-    "RESEND_API_KEY", "SELLER_EMAIL", "ADMIN_TOKEN",
-    "R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET"
+    "RESEND_API_KEY", "SELLER_EMAIL", "ADMIN_TOKEN", "BLOB_READ_WRITE_TOKEN"
   );
   const { default: handler } = await import(`../api/health.js?bare=${Date.now()}`);
   const res = mockRes();

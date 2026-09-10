@@ -4,9 +4,8 @@
   "type": "module",
   "description": "Storefront for DaVinci's Medical Library. The site itself is static; /api holds the serverless functions that record orders, take payment and deliver files.",
   "dependencies": {
-    "@aws-sdk/client-s3": "latest",
-    "@aws-sdk/s3-request-presigner": "latest",
-    "@neondatabase/serverless": "latest"
+    "@neondatabase/serverless": "latest",
+    "@vercel/blob": "latest"
   },
   "devDependencies": {
     "playwright": "^1.49.0"
