@@ -31,7 +31,7 @@
     <h1>Terms, refunds &amp; privacy</h1>
     <p class="lede">
       Written plainly, because you should be able to read it before you pay.
-      Last updated <span id="updated">6 September 2026</span>.
+      Last updated <span id="updated">7 September 2026</span>.
     </p>
   </div>
 
@@ -55,16 +55,18 @@
 
     <h3>How an order works</h3>
     <p>
-      Payment is taken by UPI, using the QR code shown at checkout. After paying,
-      you send us your transaction reference and the email address you want the
-      notes delivered to. We verify the payment against our records and send the
-      files. Orders are normally delivered within 12 hours, and we will contact
-      you if anything delays that.
+      Payment is taken by <strong>Razorpay</strong> — UPI, cards, netbanking or
+      wallets, whichever you choose on their payment page. We never see or store
+      your card, bank or UPI details; they are entered directly with Razorpay,
+      not with us. The moment Razorpay confirms your payment to us, delivery is
+      automatic: your download link appears on the page you're returned to, and
+      is emailed to you as well. Nobody has to manually check or release an order.
     </p>
     <p>
-      An order reference beginning <strong>DV</strong> is generated in your browser
-      when you confirm payment. It helps us find your order, but it is not proof
-      of payment on its own — your UPI transaction reference is.
+      An order reference beginning <strong>DV</strong> is generated when you start
+      checkout, before you pay. It helps us find your order — quote it in any
+      email to us — but proof of payment itself lives with Razorpay, against
+      whichever payment method you used.
     </p>
 
     <h3>What you may and may not do with the notes</h3>
@@ -116,9 +118,9 @@
     <h3>How to ask</h3>
     <p>
       Email <a href="#" data-contact-email>the contact address in the footer</a> with
-      your order reference and UPI transaction ID within <strong>7 days</strong> of
-      delivery. We aim to respond within 3 working days. Approved refunds are
-      returned to the UPI account that paid, and usually clear within 5 to 7
+      your order reference within <strong>7 days</strong> of delivery. We aim to
+      respond within 3 working days. Approved refunds are issued back to the
+      original payment method through Razorpay, and usually clear within 5 to 7
       working days.
     </p>
 
@@ -135,26 +137,42 @@
 
     <h3>What we actually receive</h3>
     <p>
-      We only receive what you choose to send us when you confirm an order: your
-      email address, your UPI transaction reference, and the list of titles you
-      bought. We use it to verify the payment, deliver your files, and answer
-      questions about your order.
+      We receive the email address and titles you check out with, your order's
+      status, and — once Razorpay confirms a payment — the payment ID it
+      generates for that transaction. We use it to deliver your files and answer
+      questions about your order. We do not receive or store your card number,
+      bank details or UPI ID; those go directly to Razorpay.
     </p>
 
     <h3>What we do not do</h3>
     <ul>
       <li>No analytics, advertising or tracking scripts run on this site.</li>
-      <li>We do not sell, rent or share your details with anyone.</li>
-      <li>We never see or store your card, bank or UPI credentials — payment
-          happens entirely inside your own UPI app.</li>
+      <li>We do not sell, rent or share your details with anyone beyond the
+          service providers below, and only for the purpose of completing your
+          order.</li>
+      <li>We never see or store your card, bank or UPI credentials — payment is
+          entered directly with Razorpay, not with us.</li>
     </ul>
 
     <h3>Third parties</h3>
     <p>
-      There are none. Every asset this site needs — fonts, the 3D model, and the
-      libraries that render it — is served from this domain. Your browser makes
-      no request to any other company while you use the site, so there is nobody
-      else to receive your IP address or build a profile from your visit.
+      Checkout necessarily involves a small number of service providers who each
+      handle only what they need to do their one job:
+    </p>
+    <ul>
+      <li><strong>Razorpay</strong> — processes your payment. Your card, bank and
+          UPI details go to them, never to us.</li>
+      <li><strong>Neon</strong> — stores the order record itself (your email,
+          what you bought, its status).</li>
+      <li><strong>Vercel Blob</strong> — stores the note files and generates
+          the expiring link you download them from.</li>
+      <li><strong>Resend</strong> — sends the order and delivery emails.</li>
+    </ul>
+    <p>
+      None of them may use your data for anything beyond processing your order.
+      Everything else this site needs — fonts, the 3D model, and the libraries
+      that render it — is served from this domain, so browsing the site itself,
+      before you check out, makes no request to any of these companies.
     </p>
 
     <h3>Keeping and deleting your data</h3>

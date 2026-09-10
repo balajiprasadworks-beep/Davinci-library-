@@ -1,10 +1,10 @@
 /* ============================================================
    ORDER CONSTRUCTION AND VALIDATION
 
-   The browser sends product ids and nothing else. Titles and
-   prices are read from the catalogue on the server, so a tampered
-   client cannot invent a ₹1 order — the total the seller sees is
-   always the total the catalogue says.
+   The browser sends product ids and an email, nothing else. Titles
+   and prices are read from the catalogue on the server, so a
+   tampered client cannot invent a ₹1 order — the amount Razorpay
+   actually charges is always the amount the catalogue says.
 
    The catalogue module is plain data with no DOM access, so the
    same file the page renders from is the file this imports.
@@ -15,13 +15,20 @@ import { PRODUCTS, isBuyable } from "../../js/catalog.js";
 const MAX_ITEMS = 40;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+/** True for C0 control characters (0x00-0x1F) and DEL (0x7F) — the
+ *  bytes that have no business reaching an inbox or a database row.
+ *  Written as numeric comparisons rather than a regex escape so the
+ *  bytes themselves never have to appear, literally or escaped, in
+ *  this source file. */
+const isControlChar = (code) => code <= 0x1f || code === 0x7f;
+
 /** Strip control characters and clamp, so nothing odd reaches an inbox.
- *  Only C0 and DEL go: hyphens and spaces are legitimate in both UPI
- *  references and email local parts. Written as escapes on purpose --
- *  literal control characters in source are invisible and easily lost. */
+ *  Hyphens and spaces are left alone — both are legitimate in product
+ *  ids and email local parts. */
 const clean = (value, max) =>
-  String(value ?? "")
-    .replace(/[\u0000-\u001F\u007F]/g, "")
+  Array.from(String(value ?? ""))
+    .filter((ch) => !isControlChar(ch.codePointAt(0)))
+    .join("")
     .trim()
     .slice(0, max);
 
@@ -42,15 +49,16 @@ export class OrderError extends Error {
   }
 }
 
-function priceEmail(body) {
+/**
+ * Turn a request body into a not-yet-paid order, or throw OrderError.
+ * @param {{ids?: unknown, email?: unknown}} body
+ */
+export function build(body) {
   const email = clean(body?.email, 254).toLowerCase();
   if (!EMAIL.test(email)) {
     throw new OrderError("Enter the email address your notes should go to.", "email");
   }
-  return email;
-}
 
-function priceItems(body) {
   if (!Array.isArray(body?.ids) || body.ids.length === 0) {
     throw new OrderError("Your cart is empty.", "ids");
   }
@@ -68,60 +76,14 @@ function priceItems(body) {
     }
     items.push({ id: product.id, title: product.title, price: product.price });
   }
-  return items;
-}
-
-/**
- * Turn a request body into an order, or throw OrderError. The manual
- * QR/UPI path: the buyer has already paid by the time this runs, and
- * types in their own reference as proof.
- * @param {{ids?: unknown, email?: unknown, txnId?: unknown}} body
- */
-export function build(body) {
-  const email = priceEmail(body);
-
-  const txnId = clean(body?.txnId, 64);
-  if (txnId.length < 4) {
-    throw new OrderError("Enter the reference your UPI app showed after payment.", "txnId");
-  }
-
-  const items = priceItems(body);
 
   return {
     ref: reference(),
-    placedAt: new Date().toISOString(),
     email,
-    txnId,
-    status: "awaiting-payment-check",
     // Authoritative: summed from the catalogue, never from the client.
     total: items.reduce((sum, i) => sum + i.price, 0),
     items,
   };
 }
 
-/**
- * The Cashfree path: payment hasn't happened yet — the order is
- * created first so Cashfree has an order_id to attach a checkout
- * session to, and only turns into "delivered" once Cashfree confirms
- * it was actually paid (see _lib/cashfree.js and _lib/finalize.js).
- * No txnId: Cashfree tells us the payment succeeded, so the buyer
- * never has to transcribe one.
- * @param {{ids?: unknown, email?: unknown}} body
- */
-export function buildPending(body) {
-  const email = priceEmail(body);
-  const items = priceItems(body);
-
-  return {
-    ref: reference(),
-    placedAt: new Date().toISOString(),
-    email,
-    txnId: null,
-    provider: "cashfree",
-    status: "awaiting-payment",
-    total: items.reduce((sum, i) => sum + i.price, 0),
-    items,
-  };
-}
-
-export const STATUSES = ["awaiting-payment", "awaiting-payment-check", "delivered", "refunded", "cancelled"];
+export const STATUSES = ["created", "paid", "delivered", "failed", "refunded", "cancelled"];

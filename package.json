@@ -2,8 +2,9 @@
   "name": "davinci-medical-library",
   "private": true,
   "type": "module",
-  "description": "Storefront for DaVinci's Medical Library. The site itself is static; /api holds the serverless functions that record orders.",
+  "description": "Storefront for DaVinci's Medical Library. The site itself is static; /api holds the serverless functions that record orders, take payment and deliver files.",
   "dependencies": {
+    "@neondatabase/serverless": "latest",
     "@vercel/blob": "latest"
   },
   "devDependencies": {

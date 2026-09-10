@@ -23,10 +23,12 @@
      blobPath the pathname returned by tools/upload-note.mjs after
              uploading the PDF to the private Vercel Blob store — NOT a
              ready-to-use URL. The store is private, so the site signs
-             a fresh, expiring download link from this pathname each
-             time an order for the title is marked delivered. Omit
-             while a title ships by manual email — the delivery email
-             simply says it's coming separately.
+             a fresh, expiring download link from this pathname
+             automatically the instant Razorpay's webhook confirms
+             payment for an order containing this title. Omit while a
+             title has no PDF uploaded yet — the buyer's email then
+             says it's coming separately, and the order still records
+             and gets paid normally.
      status  'live'  purchasable (the default when omitted)
              'soon'  listed but NOT purchasable — shown dimmed, no
                      Add to Cart, and the server refuses to price it.
@@ -397,6 +399,16 @@ export const PRODUCTS = [
     price: 199,
     meta: ["PDF", "AMC stem patterns", "DSM-5-TR"],
     file: "DaVinci Medical Library's AMC 1 - Mental Health.pdf",
+  },
+  {
+    id: "abroad-amc1-gastroenterology",
+    addedAt: "2026-09-07",
+    cat: "abroad", sub: "amc-1", region: "abdomen",
+    title: "Gastroenterology — AMC 1",
+    desc: "Gastroenterology and GI surgery for the AMC Part 1 CAT. Every condition in the same shape: the exact MCQ stem AMC uses, the buzzwords and killer discriminators that lock the diagnosis, investigations tiered from first test to gold standard, and the AMC traps examiners set for the obvious wrong answer.",
+    price: 199,
+    meta: ["PDF", "AMC stem patterns", "GI Surgery"],
+    file: "DaVinci Medical Library's AMC 1 - Gastroenterology.pdf",
   },
   {
     id: "abroad-amc-1",

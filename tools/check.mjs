@@ -1,7 +1,8 @@
 /**
  * End-to-end regression suite. Drives a real browser over the whole site:
- * the 3D figure, both filter levels, the cart, QR checkout, the dashboard,
- * profile persistence, the legal and 404 pages, and the iPad layout.
+ * the 3D figure, both filter levels, the cart, Razorpay checkout, the
+ * dashboard, profile persistence, the legal and 404 pages, and the iPad
+ * layout.
  *
  *   npm i -D playwright
  *   python3 -m http.server 8099     # from the repo root
@@ -9,6 +10,14 @@
  *
  * Exits non-zero and lists every failure, so it works in CI as-is.
  * Set BASE_URL to test a deployed build instead of localhost.
+ *
+ * Payment itself cannot be exercised by this suite: against a plain
+ * static server (no Vercel functions, no Razorpay/Neon/R2 credentials)
+ * /api/create-order does not exist, so what this suite actually proves
+ * about checkout is that it fails loudly and clearly rather than
+ * silently faking a sale — see section 6. The real payment -> webhook
+ * -> delivery loop needs a deployed preview with real (test-mode)
+ * credentials, checked by hand.
  */
 
 import { chromium } from "playwright";
@@ -25,10 +34,10 @@ const browser = await chromium.launch({
 const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
 const page = await ctx.newPage();
 
-// Nothing static is allowed to 404 — the site is fully self-hosted and the
-// payment QR is committed. The one exception is /api/*: those routes only
-// exist on Vercel, so against a plain static server their absence is the
-// very thing the checkout fallback is designed to survive.
+// Nothing static is allowed to 404 — the site is fully self-hosted. The one
+// exception is /api/*: those routes only exist on Vercel, so against a plain
+// static server their absence is exactly what section 6 checks for — a
+// clear "checkout unavailable" message, not a broken silent fallback.
 const EXPECTED_MISSING = /\/api\//;
 
 // A 404 surfaces as a console error whose text does NOT include the URL, so
@@ -208,46 +217,35 @@ const total = await page.locator(".summary-row.total .price").textContent();
 log("cart lines:", lines, "· total:", total.trim());
 if (lines !== 2) problems.push(`cart should hold 2 lines, saw ${lines}`);
 
-// The QR is the entire payment path — assert it actually rendered. Checkout
-// deliberately shows only the code itself, no UPI ID or name typed out
-// beside it, so also assert that text stays off the page.
-const qr = await page.evaluate(() => {
-  const img = document.querySelector(".qr-frame img");
-  return {
-    present: !!img,
-    loaded: !!img && img.complete && img.naturalWidth > 0,
-    placeholder: !!document.querySelector(".qr-frame .qr-missing"),
-    upiShown: !!document.querySelector(".qr-upi"),
-  };
-});
-log("payment QR:", JSON.stringify(qr));
-if (!qr.loaded) problems.push("payment QR image did not load on the cart page");
-if (qr.placeholder) problems.push("cart is still showing the QR placeholder");
-if (qr.upiShown) problems.push("UPI ID/name should not be shown at checkout, only the QR");
-
 await page.screenshot({ path: `${OUT}/cart.png`, fullPage: true });
 
+// No backend here (plain static server, no /api routes), so this must
+// fail loudly with a clear message and leave the cart untouched — never
+// silently record a sale that was never actually paid for. That is the
+// whole point of removing the old local-only fallback.
 await page.fill("#email", "student@example.com");
-await page.fill("#txn", "441122334455");
-await page.click('#confirm-form button[type="submit"]');
+await page.click('#pay-form button[type="submit"]');
 await page.waitForTimeout(700);
-const placed = await page.locator("text=Order placed").count();
+const unavailableShown = await page.locator("text=Checkout unavailable").count();
+const stillOnPayForm = await page.locator("#pay-form").count() > 0;
 const badgeAfter = await page.locator("[data-cart-count]").first().textContent();
-const fallbackCopy = await page.locator("text=Send us the reference").count();
-log("order placed:", placed > 0, "· badge cleared:", badgeAfter.trim() === "0",
-    "· fallback copy shown:", fallbackCopy > 0);
-if (!fallbackCopy) problems.push("no API here, so checkout should have shown the fallback instructions");
-if (!placed) problems.push("checkout did not confirm the order");
-if (badgeAfter.trim() !== "0") problems.push("cart was not emptied after checkout");
+log("checkout unavailable message shown:", unavailableShown > 0,
+    "· cart untouched:", badgeAfter.trim() === String(lines));
+if (!unavailableShown) problems.push("checkout with no backend should show a clear 'unavailable' message");
+if (!stillOnPayForm) problems.push("a failed checkout should not show a fake confirmation screen");
+if (badgeAfter.trim() !== String(lines)) problems.push("a failed checkout should not touch the cart");
 
-/* ---------- 7. dashboard reflects the order ---------- */
+/* ---------- 7. dashboard renders cleanly with no orders ---------- */
+// Section 6 deliberately could not place a real order (no backend here —
+// see above), so this just checks the empty state renders rather than
+// asserting an order that was never actually created.
 await page.goto(BASE + "/dashboard.html", { waitUntil: "networkidle" });
 await page.waitForTimeout(500);
 const statValues = await page.locator(".stat-value").allTextContents();
-const orderRefs = await page.locator("#orders .cart-line h4").allTextContents();
 log("dashboard stats:", statValues.join(" | "));
-log("dashboard orders:", orderRefs.join(", "));
-if (!orderRefs.length) problems.push("dashboard shows no order after checkout");
+if (!(await page.locator("#orders .empty-state").count())) {
+  problems.push("dashboard should show its empty state when there are no recorded orders");
+}
 await page.screenshot({ path: `${OUT}/dashboard.png`, fullPage: true });
 
 /* ---------- 8. profile persistence ---------- */
@@ -310,14 +308,13 @@ for (const want of ["Terms", "Refunds", "Privacy"]) {
 await page.locator("#pinned-grid [data-add]").first().click();
 await page.goto(BASE + "/cart.html", { waitUntil: "networkidle" });
 await page.waitForTimeout(500);
-await page.click('#confirm-form button[type="submit"]');
+await page.click('#pay-form button[type="submit"]');
 await page.waitForTimeout(300);
 const emailErr = await page.locator("#field-email.has-error").count();
 log("empty submit shows inline error:", emailErr > 0);
 if (!emailErr) problems.push("checkout submitted with no email and showed no error");
 await page.fill("#email", "not-an-email");
-await page.fill("#txn", "123456789");
-await page.click('#confirm-form button[type="submit"]');
+await page.click('#pay-form button[type="submit"]');
 await page.waitForTimeout(300);
 if (!(await page.locator("#field-email.has-error").count()))
   problems.push("invalid email accepted at checkout");

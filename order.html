@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your Order — DaVinci's Medical Library</title>
+<meta name="description" content="Payment confirmation and your download links.">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='none' stroke='%23c9a55c' stroke-width='2'/><path d='m20 11-3 7-7 3 3-7z' fill='%23e3c88a'/></svg>">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<div id="header-slot"></div>
+
+<main class="wrap section" id="main">
+  <div class="section-head">
+    <p class="eyebrow">Checkout</p>
+    <h1>Your Order</h1>
+  </div>
+
+  <div id="order-root"></div>
+</main>
+
+<div id="footer-slot"></div>
+
+<script type="module">
+  import { SITE, money } from "./js/config.js";
+  import * as cart from "./js/cart.js";
+  import { mountShell, icons } from "./js/shell.js";
+
+  mountShell("");
+
+  const root = document.getElementById("order-root");
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  const ref = new URL(location.href).searchParams.get("ref")?.trim().toUpperCase() ?? "";
+
+  function noRefHTML() {
+    return `
+    <div class="glass empty-state">
+      ${icons.bag}
+      <h3>No order to show</h3>
+      <p>This page is where you land right after paying. Nothing to see here on its own.</p>
+      <a class="btn btn-primary u-mt-sm" href="index.html">Browse the library</a>
+    </div>`;
+  }
+
+  function waitingHTML(waitedTooLong) {
+    return `
+    <div class="glass empty-state order-confirm">
+      <h2>${waitedTooLong ? "Still confirming your payment" : "Confirming your payment…"}</h2>
+      <p class="order-ref">${esc(ref)}</p>
+      <p class="order-note">
+        ${waitedTooLong
+          ? `This is taking longer than usual. If you completed payment, check
+             <strong>${esc(SITE.contactEmail)}</strong>'s reply address shortly — the
+             confirmation email carries your download links. If nothing arrives,
+             email us quoting <strong>${esc(ref)}</strong> and we'll sort it out.`
+          : `Razorpay is confirming your payment with us — this page updates itself,
+             usually within a few seconds.`}
+      </p>
+      ${waitedTooLong ? `
+      <div class="order-actions">
+        <a class="btn btn-primary" href="mailto:${SITE.contactEmail}?subject=${encodeURIComponent(`Order ${ref} — where are my notes?`)}">Email us</a>
+        <a class="btn btn-ghost" href="dashboard.html">View my orders</a>
+      </div>` : ""}
+    </div>`;
+  }
+
+  function deliveredHTML(order) {
+    return `
+    <div class="glass empty-state order-confirm">
+      ${icons.check}
+      <h2>Payment received</h2>
+      <p class="order-ref">${esc(order.ref)} · ${money(order.total)}</p>
+      <p class="order-note">Your notes are ready — download them below, or from the email on its way to you.</p>
+      <div class="order-items-list u-mt-md">
+        ${order.items.map((i) => `
+          <div class="cart-line">
+            <div class="cart-line-body"><h4>${esc(i.title)}</h4></div>
+            ${i.fileUrl
+              ? `<a class="btn btn-primary btn-sm" href="${esc(i.fileUrl)}" rel="noopener">Download PDF ${icons.arrow}</a>`
+              : `<span class="note-tag" style="margin:0">Sending separately</span>`}
+          </div>`).join("")}
+      </div>
+      <div class="order-actions u-mt-md">
+        <a class="btn btn-ghost" href="dashboard.html">View my orders</a>
+        <a class="btn btn-ghost" href="index.html">Keep browsing</a>
+      </div>
+    </div>`;
+  }
+
+  function notFoundHTML() {
+    return `
+    <div class="glass empty-state">
+      <h3>We can't find that order</h3>
+      <p>Double-check the link, or email <strong>${esc(SITE.contactEmail)}</strong> quoting <strong>${esc(ref)}</strong>.</p>
+      <a class="btn btn-primary u-mt-sm" href="dashboard.html">View my orders</a>
+    </div>`;
+  }
+
+  /** Once delivery is confirmed, bring the buyer's own local order
+   *  history in line with reality — it was saved as "created" at
+   *  checkout time and has had no way to update itself since. */
+  function syncLocalOrder(order) {
+    const all = cart.orders();
+    const idx = all.findIndex((o) => o.ref === order.ref);
+    if (idx === -1) return;
+    all[idx] = { ...all[idx], status: order.status, total: order.total };
+    try { localStorage.setItem("davinci.orders.v1", JSON.stringify(all)); } catch {}
+  }
+
+  const POLL_MS = 2500;
+  const MAX_ATTEMPTS = 24; // ~60 seconds
+
+  async function poll(attempt = 0) {
+    let res;
+    try {
+      res = await fetch(`/api/order-lookup?ref=${encodeURIComponent(ref)}`);
+    } catch {
+      root.innerHTML = waitingHTML(attempt >= MAX_ATTEMPTS);
+      if (attempt < MAX_ATTEMPTS) setTimeout(() => poll(attempt + 1), POLL_MS);
+      return;
+    }
+
+    if (res.status === 404) { root.innerHTML = notFoundHTML(); return; }
+    if (!res.ok) { root.innerHTML = waitingHTML(attempt >= MAX_ATTEMPTS); }
+    else {
+      const order = await res.json();
+      if (order.status === "delivered") {
+        syncLocalOrder(order);
+        root.innerHTML = deliveredHTML(order);
+        return;
+      }
+      root.innerHTML = waitingHTML(attempt >= MAX_ATTEMPTS);
+    }
+
+    if (attempt < MAX_ATTEMPTS) setTimeout(() => poll(attempt + 1), POLL_MS);
+  }
+
+  if (!ref) {
+    root.innerHTML = noRefHTML();
+  } else {
+    root.innerHTML = waitingHTML(false);
+    poll();
+  }
+</script>
+
+</body>
+</html>

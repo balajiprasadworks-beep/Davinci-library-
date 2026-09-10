@@ -1,52 +1,75 @@
 /* ============================================================
    GET /api/order-lookup?ref=DV-XXXXXX
 
-   Public, deliberately minimal: a buyer landing back on cart.html
-   after paying through Cashfree needs to know whether their order
-   is done, nothing more. No admin token, no email, no items, no
-   pricing — those already live in the buyer's own browser from the
-   create-order response, and re-exposing them here would just be a
-   second place for that data to leak from.
+   Public, unauthenticated — order.html polls this right after a
+   Razorpay redirect to learn when delivery has actually happened,
+   so it can show the download button on the page itself rather
+   than making the buyer wait on email.
 
-   For a Cashfree order still "awaiting-payment", this opportunistically
-   calls the same finalize check the webhook does — a backstop for
-   when the webhook is slow, lost, or its signature failed to verify
-   for a reason unrelated to whether the payment went through. Most
-   of the time this is what actually resolves a Cashfree order: the
-   buyer's own browser gets here well before some webhooks do.
+   Safe without a login because `ref` already acts as a bearer
+   token: a random 6-character code from a 25-symbol alphabet (about
+   244 billion combinations), shown only to the buyer who placed
+   that exact order — the same property the site already relies on
+   elsewhere ("email us your reference"). This returns only what
+   that buyer already has: their own order, never anyone else's,
+   and never a listing of orders.
+
+   Download links are re-presigned on every call rather than read
+   back from storage — a presigned URL is a working credential and
+   is deliberately never written to the database; see the note in
+   api/_lib/deliver.js. Presigning is local computation (no network
+   call), so doing it again here costs nothing.
    ============================================================ */
 
-import * as store from "./_lib/store.js";
-import { finalizeIfPaid } from "./_lib/finalize.js";
+import * as db from "./_lib/db.js";
+import * as blob from "./_lib/blob.js";
+import { PRODUCTS } from "../js/catalog.js";
 import { json, methodIs } from "./_lib/http.js";
+
+function queryRef(req) {
+  if (req.query?.ref) return String(req.query.ref);
+  try {
+    return new URL(req.url, "http://localhost").searchParams.get("ref") ?? "";
+  } catch {
+    return "";
+  }
+}
 
 export default async function handler(req, res) {
   if (!methodIs(req, res, "GET")) return;
 
-  if (!store.isConfigured()) {
+  if (!db.isConfigured()) {
     return json(res, 501, { error: "Order storage is not configured.", code: "no-store" });
   }
 
-  const ref = String(req.query?.ref ?? "").trim();
-  if (!ref) return json(res, 400, { error: "Which order?", field: "ref" });
+  const ref = queryRef(req).trim().toUpperCase();
+  if (!ref) return json(res, 400, { error: "Missing ref." });
 
+  let order;
   try {
-    let order = await store.get(ref);
-    if (!order) return json(res, 404, { error: `No order ${ref}.` });
-
-    if (order.provider === "cashfree" && order.status === "awaiting-payment") {
-      await finalizeIfPaid(ref).catch((err) => {
-        // A failed check here just means the buyer sees "still
-        // confirming" a little longer — the webhook, or their next
-        // poll, gets another chance. Never surface this as an error.
-        console.warn("order-lookup finalize check failed", err);
-      });
-      order = (await store.get(ref)) ?? order;
-    }
-
-    return json(res, 200, { ref: order.ref, status: order.status });
+    order = await db.getByRef(ref);
   } catch (err) {
     console.error("order lookup failed", err);
-    return json(res, 502, { error: "Could not check that order." });
+    return json(res, 502, { error: "Could not look up that order." });
   }
+
+  if (!order) return json(res, 404, { error: "No such order." });
+
+  const delivered = order.status === "delivered";
+  const items = await Promise.all(order.items.map(async (item) => {
+    if (!delivered) return { id: item.id, title: item.title, price: item.price };
+
+    const path = PRODUCTS.find((p) => p.id === item.id)?.blobPath;
+    let fileUrl = null;
+    if (path) {
+      try {
+        fileUrl = await blob.presignDownload(path);
+      } catch (err) {
+        console.warn(`order-lookup: could not presign a link for ${item.id}:`, err);
+      }
+    }
+    return { id: item.id, title: item.title, price: item.price, fileUrl };
+  }));
+
+  return json(res, 200, { ref: order.ref, status: order.status, total: order.total, items });
 }

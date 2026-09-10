@@ -1,9 +1,9 @@
 /* ============================================================
    FILE STORAGE — Vercel Blob, PRIVATE store.
 
-   Holds the actual note PDFs so the "mark delivered" email can
-   link straight to the file, with nobody attaching anything by
-   hand.
+   Holds the actual note PDFs so a confirmed payment can be turned
+   into a working download link automatically, with nobody
+   attaching anything by hand.
 
    The store is private, not public: a bare blob URL on a private
    store requires an `Authorization: Bearer` header, which a
@@ -68,9 +68,9 @@ const PRESIGN_TIMEOUT_MS = 8000;
  *
  * Throws on failure (bad pathname, API error, token trouble, or a
  * timeout — issueSignedToken is a real network call and a hung one
- * would otherwise stall the whole "mark delivered" request) — the
- * caller must catch this and fall back to "sending separately"
- * rather than let one broken link fail the whole delivery.
+ * would otherwise stall the whole delivery) — the caller must catch
+ * this and fall back to "sending separately" rather than let one
+ * broken link fail the whole delivery.
  */
 export async function presignDownload(pathname, { validForMs = LINK_LIFETIME_MS } = {}) {
   const { issueSignedToken, presignUrl } = await import("@vercel/blob");

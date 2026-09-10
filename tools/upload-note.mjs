@@ -14,9 +14,10 @@
  * Why private, not public: a public blob's URL works for anyone forever
  * once they have it. A private blob has no usable bare URL at all — every
  * download needs a signed, expiring link, generated fresh by the backend
- * at "mark delivered" time (see api/_lib/blob.js). That fits paid content
- * better: a leaked link stops working on its own, and a fresh one can
- * always be re-issued without re-uploading the file.
+ * the instant Razorpay's webhook confirms payment (see
+ * api/_lib/deliver.js). That fits paid content better: a leaked link
+ * stops working on its own, and a fresh one can always be re-issued
+ * without re-uploading the file.
  *
  * This never touches git and never touches the deployed site directly —
  * it talks to Vercel's Blob API and hands back a pathname. You paste that
@@ -69,6 +70,6 @@ console.log(
 );
 console.log(
   "Note: this pathname is not a working link by itself — the site generates\n" +
-  "a fresh signed, expiring download link from it automatically each time\n" +
-  "you mark an order for this title delivered."
+  "a fresh signed, expiring download link from it automatically the instant\n" +
+  "Razorpay's webhook confirms payment for an order containing this title."
 );
